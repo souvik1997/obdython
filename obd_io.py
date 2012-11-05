@@ -26,7 +26,6 @@ import serial
 import string
 import time
 from math import ceil
-import wx #due to debugEvent messaging
 
 import obd_sensors
 
@@ -36,7 +35,7 @@ GET_DTC_COMMAND   = "03"
 CLEAR_DTC_COMMAND = "04"
 GET_FREEZE_DTC_COMMAND = "07"
 
-from debugEvent import *
+from debugEvent import debug_display
 
 #__________________________________________________________________________
 def decrypt_dtc_code(code):
@@ -81,9 +80,10 @@ class OBDPort:
          to       = SERTIMEOUT
          self.ELMver = "Unknown"
          self.State = 1 #state SERIAL is 1 connected, 0 disconnected (connection failed)
+         self.port = None
          
          self._notify_window=_notify_window
-         wx.PostEvent(self._notify_window, DebugEvent([1,"Opening interface (serial port)"]))                
+         debug_display(self._notify_window, 1, "Opening interface (serial port)")
 
          try:
              self.port = serial.Serial(portnum,baud, \
@@ -94,8 +94,8 @@ class OBDPort:
              self.State = 0
              return None
              
-         wx.PostEvent(self._notify_window, DebugEvent([1,"Interface successfully " + self.port.portstr + " opened"]))
-         wx.PostEvent(self._notify_window, DebugEvent([1,"Connecting to ECU..."]))
+         debug_display(self._notify_window, 1, "Interface successfully " + self.port.portstr + " opened")
+         debug_display(self._notify_window, 1, "Connecting to ECU...")
          
          try:
             self.send_command("atz")   # initialize
@@ -104,12 +104,12 @@ class OBDPort:
             return None
             
          self.ELMver = self.get_result()
-         wx.PostEvent(self._notify_window, DebugEvent([2,"atz response:" + self.ELMver]))
+         debug_display(self._notify_window, 2, "atz response:" + self.ELMver)
          self.send_command("ate0")  # echo off
-         wx.PostEvent(self._notify_window, DebugEvent([2,"ate0 response:" + self.get_result()]))
+         debug_display(self._notify_window, 2, "ate0 response:" + self.get_result())
          self.send_command("0100")
          ready = self.get_result()
-         wx.PostEvent(self._notify_window, DebugEvent([2,"0100 response:" + ready]))
+         debug_display(self._notify_window, 2, "0100 response:" + ready)
          return None
               
      def close(self):
@@ -130,7 +130,7 @@ class OBDPort:
              for c in cmd:
                  self.port.write(c)
              self.port.write("\r\n")
-             wx.PostEvent(self._notify_window, DebugEvent([3,"Send command:" + cmd]))
+             debug_display(self._notify_window, 3, "Send command:" + cmd)
 
      def interpret_result(self,code):
          """Internal use only: not a public interface"""
@@ -171,10 +171,10 @@ class OBDPort:
                  else:
                      if buffer != "" or c != ">": #if something is in buffer, add everything
                       buffer = buffer + c
-             wx.PostEvent(self._notify_window, DebugEvent([3,"Get result:" + buffer]))
+             debug_display(self._notify_window, 3, "Get result:" + buffer)
              return buffer
          else:
-            wx.PostEvent(self._notify_window, DebugEvent([3,"NO self.port!" + buffer]))
+            debug_display(self._notify_window, 3, "NO self.port!" + buffer)
          return None
 
      # get sensor value from command
