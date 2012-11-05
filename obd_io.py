@@ -104,11 +104,20 @@ class OBDPort:
             return None
             
          self.ELMver = self.get_result()
+         if(self.ELMver is None):
+            self.State = 0
+            return None
+         
          debug_display(self._notify_window, 2, "atz response:" + self.ELMver)
          self.send_command("ate0")  # echo off
          debug_display(self._notify_window, 2, "ate0 response:" + self.get_result())
          self.send_command("0100")
          ready = self.get_result()
+         
+         if(ready is None):
+            self.State = 0
+            return None
+            
          debug_display(self._notify_window, 2, "0100 response:" + ready)
          return None
               
@@ -162,16 +171,26 @@ class OBDPort:
      def get_result(self):
          """Internal use only: not a public interface"""
          time.sleep(0.1)
-         if self.port:
+         repeat_count = 0
+         if self.port is not None:
              buffer = ""
              while 1:
                  c = self.port.read(1)
+                 if len(c) == 0:
+                    if(repeat_count == 5):
+                        break
+                    repeat_count = repeat_count + 1
+                    continue
+                    
                  if c == '\r' and len(buffer) > 0:
                      break
-                 else:
-                     if buffer != "" or c != ">": #if something is in buffer, add everything
-                      buffer = buffer + c
+                 
+                 if buffer != "" or c != ">": #if something is in buffer, add everything
+                    buffer = buffer + c
+                    
              debug_display(self._notify_window, 3, "Get result:" + buffer)
+             if(buffer == ""):
+                return None
              return buffer
          else:
             debug_display(self._notify_window, 3, "NO self.port!" + buffer)
