@@ -193,7 +193,7 @@ class OBDPort:
                 return None
              return buffer
          else:
-            debug_display(self._notify_window, 3, "NO self.port!" + buffer)
+            debug_display(self._notify_window, 3, "NO self.port!")
          return None
 
      # get sensor value from command
