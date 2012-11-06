@@ -183,6 +183,11 @@ class OBDPort:
                     continue
                     
                  if c == '\r' and len(buffer) > 0:
+                     if(buffer == "SEARCHING..."):
+                         buffer = ""
+                         continue
+                     if(buffer == "UNABLE TO CONNECT"):
+                         return None
                      break
                  
                  if buffer != "" or c != ">": #if something is in buffer, add everything
