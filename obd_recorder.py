@@ -35,16 +35,22 @@ class OBD_Recorder():
         return self.port
         
     def add_log_item(self, item):
-        for e in obd_sensors.SENSORS:
+        for index, e in enumerate(obd_sensors.SENSORS):
             if(item == e.shortname):
-                self.sensorlist.append(e)
+                self.sensorlist.append(index)
                 print "Logging item: "+e.name
                 break
             
             
-#    def record_data(self):
-#        for n in range(1,10):
-#            self.logger.info('woo %s %s %s yay', n, n, n)
+    def record_data(self):
+        if(self.port is None):
+            return None
+        
+        print "Logging started"
+        while 1:
+            for index in self.sensorlist:
+                (name, value, unit) = self.port.sensor(index)
+                self.logger.info('%s,%s,%s',obd_sensors.SENSORS[index].shortname,value,unit)
             
             
         
@@ -55,4 +61,4 @@ o.add_log_item("throttle_pos")
 o.connect()
 if not o.is_connected():
     print "Not connected"
-#o.record_data()
+o.record_data()
