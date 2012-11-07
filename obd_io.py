@@ -99,6 +99,7 @@ class OBDPort:
          
          try:
             self.send_command("atz")   # initialize
+            time.sleep(1)
          except serial.SerialException:
             self.State = 0
             return None
@@ -170,7 +171,7 @@ class OBDPort:
     
      def get_result(self):
          """Internal use only: not a public interface"""
-         time.sleep(0.1)
+         time.sleep(0.01)
          repeat_count = 0
          if self.port is not None:
              buffer = ""
@@ -182,14 +183,12 @@ class OBDPort:
                     repeat_count = repeat_count + 1
                     continue
                     
-                 if c == '\r' and len(buffer) > 0:
-                     if(buffer == "SEARCHING..."):
-                         buffer = ""
-                         continue
-                     if(buffer == "UNABLE TO CONNECT"):
-                         return None
-                     break
-                 
+                 if c == '\r':
+                    continue
+                    
+                 if c == ">":
+                    break;
+                     
                  if buffer != "" or c != ">": #if something is in buffer, add everything
                     buffer = buffer + c
                     

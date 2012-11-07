@@ -14,13 +14,14 @@ class OBD_Recorder():
         self.sensorlist = []
         self.logger = logging.getLogger(__name__)
         log_handler = logging.FileHandler(filename)
-        log_formatter = logging.Formatter('%(asctime)s %(message)s')
+        log_formatter = logging.Formatter('%(asctime)s,%(message)s', "%H:%M:%S:%f")
         log_handler.setFormatter(log_formatter)
         self.logger.addHandler(log_handler)
         self.logger.setLevel(logging.INFO)
         
     def connect(self):
         portnames = scanSerial()
+        #portnames = ['COM10']
         print portnames
         for port in portnames:
             self.port = obd_io.OBDPort(port, None, 2, 2)
