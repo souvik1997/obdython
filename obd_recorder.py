@@ -1,3 +1,5 @@
+#!/usr/bin/env python
+
 import obd_io
 import serial
 import platform
