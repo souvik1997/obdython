@@ -14,7 +14,7 @@ class OBD_Recorder():
         self.sensorlist = []
         self.logger = logging.getLogger(__name__)
         log_handler = logging.FileHandler(filename)
-        log_formatter = logging.Formatter('%(asctime)s,%(message)s', "%H:%M:%S:%f")
+        log_formatter = logging.Formatter('%(asctime)s:%(msecs).03d,%(message)s', "%H:%M:%S")
         log_handler.setFormatter(log_formatter)
         self.logger.addHandler(log_handler)
         self.logger.setLevel(logging.INFO)
@@ -57,7 +57,7 @@ class OBD_Recorder():
             
             
         
-o = OBD_Recorder('bikestuff.log')
+o = OBD_Recorder('/home/pi/logs/bikelog.log')
 o.add_log_item("rpm")
 o.add_log_item("speed")
 o.add_log_item("throttle_pos")
