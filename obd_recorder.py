@@ -71,6 +71,11 @@ class OBD_Recorder():
             self.log_file.write(log_string)
             
     def calculate_gear(self, rpm, speed):
+        if speed == "" or speed == 0:
+            return 0
+        if rpm == "" or rpm == 0:
+            return 0
+
         rps = rpm/60
         mps = (speed*1.609*1000)/3600
         
