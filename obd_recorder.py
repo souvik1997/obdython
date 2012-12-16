@@ -3,22 +3,27 @@
 import obd_io
 import serial
 import platform
-import logging
 import obd_sensors
+import datetime
+import time
 
 from obd_utils import scanSerial
 
 class OBD_Recorder():
-    def __init__(self, filename):
+    def __init__(self, path, log_items):
         self.port = None
         self.sensorlist = []
-        self.logger = logging.getLogger(__name__)
-        log_handler = logging.FileHandler(filename)
-        log_formatter = logging.Formatter('%(asctime)s:%(msecs).03d,%(message)s', "%H:%M:%S")
-        log_handler.setFormatter(log_formatter)
-        self.logger.addHandler(log_handler)
-        self.logger.setLevel(logging.INFO)
-        
+        localtime = time.localtime(time.time())
+        filename = path+"bike-"+str(localtime[0])+"-"+str(localtime[1])+"-"+str(localtime[2])+"-"+str(localtime[3])+"-"+str(localtime[4])+"-"+str(localtime[5])+".log"
+        self.log_file = open(filename, "w", 128)
+        self.log_file.write("Time,RPM,MPH,Throttle,Gear");
+
+        for item in log_items:
+            self.add_log_item(item)
+
+        self.gear_ratios = [34/13, 39/21, 36/23, 27/20, 26/21, 25/22]
+        #log_formatter = logging.Formatter('%(asctime)s.%(msecs).03d,%(message)s', "%H:%M:%S")
+
     def connect(self):
         portnames = scanSerial()
         #portnames = ['COM10']
@@ -50,17 +55,37 @@ class OBD_Recorder():
             return None
         
         print "Logging started"
+        
         while 1:
+            localtime = datetime.now()
+            current_time = str(localtime.hour)+":"+str(localtime.minute)+":"+str(localtime.second)+"."+str(localtime.microsecond)
+            log_string = current_time
+
             for index in self.sensorlist:
                 (name, value, unit) = self.port.sensor(index)
-                self.logger.info('%s,%s,%s',obd_sensors.SENSORS[index].shortname,value,unit)
+                log_string = log_string + ","+str(value)
+                results[obd_sensors.SENSORS[index].shortname] = value;
+
+            gear = self.calculate_gear(results["rpm"], results["speed"])
+            log_string = log_string + "," + str(gear)
+            self.log_file.write(log_string)
             
-            
+    def calculate_gear(self, rpm, speed):
+        rps = rpm/60
+        mps = (speed*1.609*1000)/3600
         
-o = OBD_Recorder('/home/pi/logs/bikelog.log')
-o.add_log_item("rpm")
-o.add_log_item("speed")
-o.add_log_item("throttle_pos")
+        primary_gear = 85/46 #street triple
+        final_drive  = 47/16
+        
+        tyre_circumference = 1.978 #meters
+
+        current_gear_ratio = (rps*tyre_circumference)/(mps*primary_gear*final_drive)
+        gear = min((abs(current_gear_ratio - i), i) for i in self.gear_ratios)[1] 
+        return gear
+            
+            
+logitems = ["rpm", "speed", "throttle_pos", "load"]
+o = OBD_Recorder('/home/pi/logs/', logitems)
 o.connect()
 if not o.is_connected():
     print "Not connected"

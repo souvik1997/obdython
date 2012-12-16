@@ -140,7 +140,7 @@ class OBDPort:
              for c in cmd:
                  self.port.write(c)
              self.port.write("\r\n")
-             debug_display(self._notify_window, 3, "Send command:" + cmd)
+             #debug_display(self._notify_window, 3, "Send command:" + cmd)
 
      def interpret_result(self,code):
          """Internal use only: not a public interface"""
@@ -192,7 +192,7 @@ class OBDPort:
                  if buffer != "" or c != ">": #if something is in buffer, add everything
                     buffer = buffer + c
                     
-             debug_display(self._notify_window, 3, "Get result:" + buffer)
+             #debug_display(self._notify_window, 3, "Get result:" + buffer)
              if(buffer == ""):
                 return None
              return buffer
