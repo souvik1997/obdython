@@ -26,6 +26,7 @@ import serial
 import string
 import time
 from math import ceil
+from datetime import datetime
 
 import obd_sensors
 
@@ -171,7 +172,7 @@ class OBDPort:
     
      def get_result(self):
          """Internal use only: not a public interface"""
-         time.sleep(0.01)
+         #time.sleep(0.01)
          repeat_count = 0
          if self.port is not None:
              buffer = ""
@@ -180,6 +181,7 @@ class OBDPort:
                  if len(c) == 0:
                     if(repeat_count == 5):
                         break
+                    print "Got nothing\n"
                     repeat_count = repeat_count + 1
                     continue
                     
@@ -213,6 +215,7 @@ class OBDPort:
                  data = sensor.value(data)
          else:
              return "NORESPONSE"
+             
          return data
 
      # return string of sensor name and value from sensor index

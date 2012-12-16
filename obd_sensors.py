@@ -138,7 +138,7 @@ SENSORS = [
     Sensor("dtc_status"            , "Status Since DTC Cleared", "0101", dtc_decrypt      ,""       ),    
     Sensor("dtc_ff"                , "DTC Causing Freeze Frame", "0102", cpass            ,""       ),    
     Sensor("fuel_status"           , "      Fuel System Status", "0103", cpass            ,""       ),
-    Sensor("load"                  , "   Calculated Load Value", "0104", percent_scale    ,""       ),    
+    Sensor("load"                  , "   Calculated Load Value", "01041", percent_scale    ,""       ),    
     Sensor("temp"                  , "     Coolant Temperature", "0105", temp             ,"C"      ),
     Sensor("short_term_fuel_trim_1", "    Short Term Fuel Trim", "0106", fuel_trim_percent,"%"      ),
     Sensor("long_term_fuel_trim_1" , "     Long Term Fuel Trim", "0107", fuel_trim_percent,"%"      ),

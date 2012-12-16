@@ -4,7 +4,7 @@ import obd_io
 import serial
 import platform
 import obd_sensors
-import datetime
+from datetime import datetime
 import time
 
 from obd_utils import scanSerial
@@ -16,7 +16,7 @@ class OBD_Recorder():
         localtime = time.localtime(time.time())
         filename = path+"bike-"+str(localtime[0])+"-"+str(localtime[1])+"-"+str(localtime[2])+"-"+str(localtime[3])+"-"+str(localtime[4])+"-"+str(localtime[5])+".log"
         self.log_file = open(filename, "w", 128)
-        self.log_file.write("Time,RPM,MPH,Throttle,Gear");
+        self.log_file.write("Time,RPM,MPH,Throttle,Load,Gear\n");
 
         for item in log_items:
             self.add_log_item(item)
@@ -60,7 +60,7 @@ class OBD_Recorder():
             localtime = datetime.now()
             current_time = str(localtime.hour)+":"+str(localtime.minute)+":"+str(localtime.second)+"."+str(localtime.microsecond)
             log_string = current_time
-
+            results = {}
             for index in self.sensorlist:
                 (name, value, unit) = self.port.sensor(index)
                 log_string = log_string + ","+str(value)
@@ -68,7 +68,7 @@ class OBD_Recorder():
 
             gear = self.calculate_gear(results["rpm"], results["speed"])
             log_string = log_string + "," + str(gear)
-            self.log_file.write(log_string)
+            self.log_file.write(log_string+"\n")
             
     def calculate_gear(self, rpm, speed):
         if speed == "" or speed == 0:
@@ -85,6 +85,8 @@ class OBD_Recorder():
         tyre_circumference = 1.978 #meters
 
         current_gear_ratio = (rps*tyre_circumference)/(mps*primary_gear*final_drive)
+        
+        print current_gear_ratio
         gear = min((abs(current_gear_ratio - i), i) for i in self.gear_ratios)[1] 
         return gear
             
