@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 ###########################################################################
 # odb_io.py
-# 
+#
 # Copyright 2004 Donour Sizemore (donour@uchicago.edu)
 # Copyright 2009 Secons Ltd. (www.obdtester.com)
 #
@@ -26,6 +26,7 @@ import serial
 import string
 import time
 import platform
+import inspect
 from math import ceil
 
 GET_DTC_COMMAND   = "03"
@@ -34,46 +35,29 @@ GET_FREEZE_DTC_COMMAND = "07"
 
 class OBDPort:
 	""" OBDPort abstracts all communication with OBD-II device."""
-	def __init__(self,portnum,_notify_window,SERTIMEOUT,RECONNATTEMPTS):
+	def __init__(self,portnum, baud=38400, databits=8, par=serial.PARITY_NONE, stopbits=1, timeout=60):
 		"""Initializes port by resetting device and gettings supported PIDs. """
-		# These should really be set by the user.
-		baud     = 38400
-		databits = 8
-		par      = serial.PARITY_NONE  # parity
-		sb       = 1                   # stop bits
-		to       = SERTIMEOUT
 		self.ELMver = "Unknown"
 		self.State = 1 #state SERIAL is 1 connected, 0 disconnected (connection failed)
 		self.port = None
 		print("Opening interface (serial port)")
 		try:
-			self.port = serial.Serial(portnum,baud, \
-			parity = par, stopbits = sb, bytesize = databits,timeout = to)
-		except serial.SerialException as e:
-			print(e)
-			self.State = 0
-			return None
-		print("Interface successfully " + self.port.portstr + " opened")
-		print("Connecting to ECU...")
-		try:
+			self.port = serial.Serial(portnum,baud, parity = par, stopbits = stopbits, bytesize = databits,timeout = timeout)
 			self.send_command("atz")   # initialize
 			time.sleep(1)
+			self.ELMver = self.get_result()
+			if(self.ELMver is None):
+				return None
+			self.send_command("ate0")
+			self.get_result() #flush
+			self.send_command("0100")
+			ready = self.get_result()
+			if(ready is None):
+				self.State = 0
+				return None
 		except serial.SerialException:
 			self.State = 0
 			return None
-		self.ELMver = self.get_result()
-		if(self.ELMver is None):
-			self.State = 0
-			return None
-		print("atz response:" + self.ELMver)
-		self.send_command("ate0")  # echo off
-		print("ate0 response:" + self.get_result())
-		self.send_command("0100")
-		ready = self.get_result()
-		if(ready is None):
-			self.State = 0
-			return None
-		print("0100 response:" + ready)
 		return None
 
 	def close(self):
@@ -90,29 +74,19 @@ class OBDPort:
 			self.port.flushOutput()
 			self.port.flushInput()
 			for c in cmd:
-				self.port.write(c)
-			self.port.write("\r\n")
+				self.port.write(c.encode())
+			self.port.write("\r\n".encode())
 
 	def interpret_result(self,code):
-		"""Internal use only: not a public interface"""
-		# Code will be the string returned from the device.
-		# It should look something like this:
-		# '41 11 0 0\r\r'
-		# 9 seems to be the length of the shortest valid response
-		if len(code) < 7:
-			#raise Exception("BogusCode")
-			print("boguscode?"+code)
+		"""Internal use only: not a public interface"""	
 		# get the first thing returned, echo should be off
-		code = string.split(code, "\r")
-		code = code[0]
-		#remove whitespace
-		code = string.split(code)
-		code = string.join(code, "")
+		code = "".join(code.split())
 		#cables can behave differently
-		if code[:6] == "NODATA": # there is no such sensor
+		print(code)
+		if code == "NODATA": # there is no such sensor
 			return "NODATA"
 		# first 4 characters are code from ELM
-		code = code[4:]
+		code = bytearray.fromhex(code)
 		return code
 
 	def get_result(self):
@@ -122,7 +96,7 @@ class OBDPort:
 		if self.port is not None:
 			buffer = ""
 			while 1:
-				c = self.port.read(1)
+				c = self.port.read(1).decode('utf-8')
 				if len(c) == 0:
 					if(repeat_count == 5):
 						break
@@ -135,6 +109,7 @@ class OBDPort:
 					break;
 				if buffer != "" or c != ">": #if something is in buffer, add everything
 					buffer = buffer + c
+				print(buffer)
 			if(buffer == ""):
 				return None
 			return buffer
@@ -151,25 +126,22 @@ class OBDPort:
 		if data:
 			data = self.interpret_result(data)
 			if data != "NODATA":
-				data = sensor.value(data)
+				data = convert(data,sensor.value,5)
 		else:
 			return "NORESPONSE"
 		return data
 
 	# return string of sensor name and value from sensor index
-	def sensor(self , sensor_index):
+	def sensor(self , sensor_shortname):
 		"""Returns 3-tuple of given sensors. 3-tuple consists of
 		(Sensor Name (string), Sensor Value (string), Sensor Unit (string) ) """
-		sensor = SENSORS[sensor_index]
+		sensor = SENSORS[sensor_shortname]
 		r = self.get_sensor_value(sensor)
 		return (sensor.name,r, sensor.unit)
 
 	def sensor_names(self):
 		"""Internal use only: not a public interface"""
-		names = []
-		for s in SENSORS:
-			names.append(s.name)
-		return names
+		return list(SENSORS.keys())
 
 	def get_tests_MIL(self):
 		statusText=["Unsupported","Supported - Completed","Unsupported","Supported - Incompleted"]
@@ -231,49 +203,19 @@ class OBDPort:
 		r = self.get_result()
 		return r
 
-class OBD_Recorder():
-	def __init__(self, sensors):
-		self.port = None
-		self.sensorlist = []
-		for item in sensors:
-			self.addsensor(item)
-		connect()
-
-	def connect(self):
-		portnames = scanSerial()
-		print(portnames)
-		for port in portnames:
-			self.port = OBDPort(port, None, 2, 2)
-			if(self.port.State == 0):
-				self.port.close()
-				self.port = None
-			else:
-				break
-		if(self.port):
-			print("Connected to "+self.port.port.name)
-
-	def is_connected(self):
-		return self.port
-
-	def addsensor(self, item):
-		for index, e in enumerate(SENSORS):
-			if(item == e.shortname):
-				self.sensorlist.append(index)
-				break
-
-	def record_data(self, callback):
-		if(self.port is None):
-			return None
-		while 1:
-			results = {}
-			for index in self.sensorlist:
-				(name, value, unit) = self.port.sensor(index)
-				results[SENSORS[index].shortname] = value;
-			callback(results)
-
-def hex_to_int(str):
-	i = int(str,16)
-	return i
+def convert(code,function, offset):
+	if inspect.getargspec(function)[1] != None:
+		return function(code)
+	elif len(inspect.getargspec(function)[0]) == 1:
+		return function(code[offset])
+	elif len(inspect.getargspec(function)[0]) == 2: #function, A, B
+		return function(code[offset],code[offset+1])
+	elif len(inspect.getargspec(function)[0]) == 3: #function, A, B, C
+		return function(code[offset],code[offset+1],code[offset+2])
+	elif len(inspect.getargspec(function)[0]) == 4: #function, A, B, C, D
+		return function(code[offset],code[offset+1],code[offset+2],code[offset+3])
+	else:
+		return 0
 
 def maf(code):
 	code = hex_to_int(code)
@@ -286,14 +228,12 @@ def throttle_pos(code):
 def intake_m_pres(code): # in kPa
 	code = hex_to_int(code)
 	return code / 0.14504
-	
-def rpm(code):
-	code = hex_to_int(code)
-	return code / 4
 
-def speed(code):
-	code = hex_to_int(code)
-	return code / 1.609
+def hexAB(code):
+	return code[6]*256+code[7] / 4
+
+def hexA(code):
+	return code[6]
 
 def percent_scale(code):
 	code = hex_to_int(code)
@@ -308,8 +248,7 @@ def sec_to_min(code):
 	return code / 60
 
 def temp(code):
-	code = hex_to_int(code)
-	return code - 40 
+	return code[6] - 40
 
 def cpass(code):
 	#fixme
@@ -348,29 +287,17 @@ def decrypt_dtc_code(code):
 		current = current[4:]
 	return dtc
 
-def hex_to_bitstring(str):
-	bitstring = ""
-	for i in str:
-		# silly type safety, we don't want to eval random stuff
-		if type(i) == type(''): 
-			v = eval("0x%s" % i)
-			if v & 8 :
-				bitstring += '1'
-			else:
-				bitstring += '0'
-			if v & 4:
-				bitstring += '1'
-			else:
-				bitstring += '0'
-			if v & 2:
-				bitstring += '1'
-			else:
-				bitstring += '0'
-			if v & 1:
-				bitstring += '1'
-			else:
-				bitstring += '0'
-	return bitstring
+def hex_to_bitstring(a,b,c,d):
+	x = 16777216*a+65536*b+256*c+d
+	if x == 0: return [0]*32
+	bit = []
+	while x:
+		bit.append(x % 2)
+		x >>= 1
+	bit=bit[::-1]
+	for x in range(32-len(bit)):
+		bit.insert(0,0)
+	return bit
 
 class Sensor:
 	def __init__(self, shortName, sensorName, sensorcommand, sensorValueFunction, u):
@@ -431,41 +358,41 @@ def scanSerial():
 			pass
 	return available
 
-SENSORS = [
-	Sensor("pids"                  , "          Supported PIDs", "0100", hex_to_bitstring ,""       ),    
-	Sensor("dtc_status"            , "Status Since DTC Cleared", "0101", decrypt_dtc_code      ,""       ),
-	Sensor("dtc_ff"                , "DTC Causing Freeze Frame", "0102", cpass            ,""       ),    
-	Sensor("fuel_status"           , "      Fuel System Status", "0103", cpass            ,""       ),
-	Sensor("load"                  , "   Calculated Load Value", "01041", percent_scale    ,""       ),    
-	Sensor("temp"                  , "     Coolant Temperature", "0105", temp             ,"C"      ),
-	Sensor("short_term_fuel_trim_1", "    Short Term Fuel Trim", "0106", fuel_trim_percent,"%"      ),
-	Sensor("long_term_fuel_trim_1" , "     Long Term Fuel Trim", "0107", fuel_trim_percent,"%"      ),
-	Sensor("short_term_fuel_trim_2", "    Short Term Fuel Trim", "0108", fuel_trim_percent,"%"      ),
-	Sensor("long_term_fuel_trim_2" , "     Long Term Fuel Trim", "0109", fuel_trim_percent,"%"      ),
-	Sensor("fuel_pressure"         , "      Fuel Rail Pressure", "010A", cpass            ,""       ),
-	Sensor("manifold_pressure"     , "Intake Manifold Pressure", "010B", intake_m_pres    ,"psi"    ),
-	Sensor("rpm"                   , "              Engine RPM", "010C1", rpm              ,""       ),
-	Sensor("speed"                 , "           Vehicle Speed", "010D1", speed            ,"MPH"    ),
-	Sensor("timing_advance"        , "          Timing Advance", "010E", timing_advance   ,"degrees"),
-	Sensor("intake_air_temp"       , "         Intake Air Temp", "010F", temp             ,"C"      ),
-	Sensor("maf"                   , "     Air Flow Rate (MAF)", "0110", maf              ,"lb/min" ),
-	Sensor("throttle_pos"          , "       Throttle Position", "01111", throttle_pos     ,"%"      ),
-	Sensor("secondary_air_status"  , "    Secondary Air Status", "0112", cpass            ,""       ),
-	Sensor("o2_sensor_positions"   , "  Location of O2 sensors", "0113", cpass            ,""       ),
-	Sensor("o211"                  , "        O2 Sensor: 1 - 1", "0114", fuel_trim_percent,"%"      ),
-	Sensor("o212"                  , "        O2 Sensor: 1 - 2", "0115", fuel_trim_percent,"%"      ),
-	Sensor("o213"                  , "        O2 Sensor: 1 - 3", "0116", fuel_trim_percent,"%"      ),
-	Sensor("o214"                  , "        O2 Sensor: 1 - 4", "0117", fuel_trim_percent,"%"      ),
-	Sensor("o221"                  , "        O2 Sensor: 2 - 1", "0118", fuel_trim_percent,"%"      ),
-	Sensor("o222"                  , "        O2 Sensor: 2 - 2", "0119", fuel_trim_percent,"%"      ),
-	Sensor("o223"                  , "        O2 Sensor: 2 - 3", "011A", fuel_trim_percent,"%"      ),
-	Sensor("o224"                  , "        O2 Sensor: 2 - 4", "011B", fuel_trim_percent,"%"      ),
-	Sensor("obd_standard"          , "         OBD Designation", "011C", cpass            ,""       ),
-	Sensor("o2_sensor_position_b"  ,"  Location of O2 sensors" , "011D", cpass            ,""       ),
-	Sensor("aux_input"             , "        Aux input status", "011E", cpass            ,""       ),
-	Sensor("engine_time"           , " Time Since Engine Start", "011F", sec_to_min       ,"min"    ),
-	Sensor("engine_mil_time"       , "  Engine Run with MIL on", "014D", sec_to_min       ,"min"    ),
-	]
+SENSORS = { # TODO: Add functions/lambdas for each sensor
+	'pids':Sensor("pids"                  , "          Supported PIDs", "0100", hex_to_bitstring ,""       ),
+	'dtc_status':Sensor("dtc_status"            , "Status Since DTC Cleared", "0101", decrypt_dtc_code      ,""       ),
+	'dtc_ff':Sensor("dtc_ff"                , "DTC Causing Freeze Frame", "0102", lambda a: a,""       ),
+	'fuel_status':Sensor("fuel_status"           , "      Fuel System Status", "0103", cpass            ,""       ),
+	'load':Sensor("load"                  , "   Calculated Load Value", "01041", percent_scale    ,""       ),
+	'temp':Sensor("temp"                  , "     Coolant Temperature", "0105", lambda a: a-40             ,"C"      ),
+	'short_term_fuel_trim_1':Sensor("short_term_fuel_trim_1", "    Short Term Fuel Trim", "0106", fuel_trim_percent,"%"      ),
+	'long_term_fuel_trim_1': Sensor("long_term_fuel_trim_1" , "     Long Term Fuel Trim", "0107", fuel_trim_percent,"%"      ),
+	'short_term_fuel_trim_2': Sensor("short_term_fuel_trim_2", "    Short Term Fuel Trim", "0108", fuel_trim_percent,"%"      ),
+	'long_term_fuel_trim_2':Sensor("long_term_fuel_trim_2" , "     Long Term Fuel Trim", "0109", fuel_trim_percent,"%"      ),
+	'fuel_pressure':Sensor("fuel_pressure"         , "      Fuel Rail Pressure", "010A", cpass            ,""       ),
+	'manifold_pressure':Sensor("manifold_pressure"     , "Intake Manifold Pressure", "010B", intake_m_pres    ,"psi"    ),
+	'rpm':Sensor("rpm"                   , "              Engine RPM", "010C1", lambda a,b: (a*256+b)/4 ,""       ),
+	'speed':Sensor("speed"                 , "           Vehicle Speed", "010D1", lambda a:a ,"MPH"    ),
+	'timing_advance':Sensor("timing_advance"        , "          Timing Advance", "010E", timing_advance   ,"degrees"),
+	'intake_air_temp':Sensor("intake_air_temp"       , "         Intake Air Temp", "010F", temp             ,"C"      ),
+	'maf':Sensor("maf"                   , "     Air Flow Rate (MAF)", "0110", maf              ,"lb/min" ),
+	'throttle_pos':Sensor("throttle_pos"          , "       Throttle Position", "01111", throttle_pos     ,"%"      ),
+	'secondary_air_status':Sensor("secondary_air_status"  , "    Secondary Air Status", "0112", cpass            ,""       ),
+	'o2_sensor_positions':Sensor("o2_sensor_positions"   , "  Location of O2 sensors", "0113", cpass            ,""       ),
+	'o211':Sensor("o211"                  , "        O2 Sensor: 1 - 1", "0114", fuel_trim_percent,"%"      ),
+	'o212':Sensor("o212"                  , "        O2 Sensor: 1 - 2", "0115", fuel_trim_percent,"%"      ),
+	'o213':Sensor("o213"                  , "        O2 Sensor: 1 - 3", "0116", fuel_trim_percent,"%"      ),
+	'o214':Sensor("o214"                  , "        O2 Sensor: 1 - 4", "0117", fuel_trim_percent,"%"      ),
+	'o221':Sensor("o221"                  , "        O2 Sensor: 2 - 1", "0118", fuel_trim_percent,"%"      ),
+	'o222':Sensor("o222"                  , "        O2 Sensor: 2 - 2", "0119", fuel_trim_percent,"%"      ),
+	'o223':Sensor("o223"                  , "        O2 Sensor: 2 - 3", "011A", fuel_trim_percent,"%"      ),
+	'o224':Sensor("o224"                  , "        O2 Sensor: 2 - 4", "011B", fuel_trim_percent,"%"      ),
+	'obd_standard':Sensor("obd_standard"          , "         OBD Designation", "011C", cpass            ,""       ),
+	'o2_sensor_position_b':Sensor("o2_sensor_position_b"  ,"  Location of O2 sensors" , "011D", cpass            ,""       ),
+	'aux_input':Sensor("aux_input"             , "        Aux input status", "011E", cpass            ,""       ),
+	'engine_time':Sensor("engine_time"           , " Time Since Engine Start", "011F", sec_to_min       ,"min"    ),
+	'engine_mil_time':Sensor("engine_mil_time"       , "  Engine Run with MIL on", "014D", sec_to_min       ,"min"    ),
+	}
 pcodes = {
 	"P0001": "Fuel Volume Regulator Control Circuit/Open",
 	"P0002": "Fuel Volume Regulator Control Circuit Range/Performance",
@@ -2234,305 +2161,305 @@ pcodes = {
 	"P3495": "Cylinder 12 Exhaust Valve Control Circuit Low",
 	"P3496": "Cylinder 12 Exhaust Valve Control Circuit High",
 	"P3497": "Cylinder Deactivation System",
-		"U0001" : "High Speed CAN Communication Bus" , 
-	"U0002" : "High Speed CAN Communication Bus (Performance)" , 
-	"U0003" : "High Speed CAN Communication Bus (Open)" , 
-	"U0004" : "High Speed CAN Communication Bus (Low)" , 
-	"U0005" : "High Speed CAN Communication Bus (High)" , 
-	"U0006" : "High Speed CAN Communication Bus (Open)" , 
-	"U0007" : "High Speed CAN Communication Bus (Low)" , 
-	"U0008" : "High Speed CAN Communication Bus (High)" , 
-	"U0009" : "High Speed CAN Communication Bus (shorted to Bus)" , 
-	"U0010" : "Medium Speed CAN Communication Bus" , 
-	"U0011" : "Medium Speed CAN Communication Bus (Performance)" , 
-	"U0012" : "Medium Speed CAN Communication Bus (Open)" , 
-	"U0013" : "Medium Speed CAN Communication Bus (Low)" , 
-	"U0014" : "Medium Speed CAN Communication Bus (High)" , 
-	"U0015" : "Medium Speed CAN Communication Bus (Open)" , 
-	"U0016" : "Medium Speed CAN Communication Bus (Low)" , 
-	"U0017" : "Medium Speed CAN Communication Bus (High)" , 
-	"U0018" : "Medium Speed CAN Communication Bus (shorted to Bus)" , 
-	"U0019" : "Low Speed CAN Communication Bus" , 
-	"U0020" : "Low Speed CAN Communication Bus (Performance)" , 
-	"U0021" : "Low Speed CAN Communication Bus (Open)" , 
-	"U0022" : "Low Speed CAN Communication Bus (Low)" , 
-	"U0023" : "Low Speed CAN Communication Bus (High)" , 
-	"U0024" : "Low Speed CAN Communication Bus (Open)" , 
-	"U0025" : "Low Speed CAN Communication Bus (Low)" , 
-	"U0026" : "Low Speed CAN Communication Bus (High)" , 
-	"U0027" : "Low Speed CAN Communication Bus (shorted to Bus)" , 
-	"U0028" : "Vehicle Communication Bus A" , 
-	"U0029" : "Vehicle Communication Bus A (Performance)" , 
-	"U0030" : "Vehicle Communication Bus A (Open)" , 
-	"U0031" : "Vehicle Communication Bus A (Low)" , 
-	"U0032" : "Vehicle Communication Bus A (High)" , 
-	"U0033" : "Vehicle Communication Bus A (Open)" , 
-	"U0034" : "Vehicle Communication Bus A (Low)" , 
-	"U0035" : "Vehicle Communication Bus A (High)" , 
-	"U0036" : "Vehicle Communication Bus A (shorted to Bus A)" , 
-	"U0037" : "Vehicle Communication Bus B" , 
-	"U0038" : "Vehicle Communication Bus B (Performance)" , 
-	"U0039" : "Vehicle Communication Bus B (Open)" , 
-	"U0040" : "Vehicle Communication Bus B (Low)" , 
-	"U0041" : "Vehicle Communication Bus B (High)" , 
-	"U0042" : "Vehicle Communication Bus B (Open)" , 
-	"U0043" : "Vehicle Communication Bus B (Low)" , 
-	"U0044" : "Vehicle Communication Bus B (High)" , 
-	"U0045" : "Vehicle Communication Bus B (shorted to Bus B)" , 
-	"U0046" : "Vehicle Communication Bus C" , 
-	"U0047" : "Vehicle Communication Bus C (Performance)" , 
-	"U0048" : "Vehicle Communication Bus C (Open)" , 
-	"U0049" : "Vehicle Communication Bus C (Low)" , 
-	"U0050" : "Vehicle Communication Bus C (High)" , 
-	"U0051" : "Vehicle Communication Bus C (Open)" , 
-	"U0052" : "Vehicle Communication Bus C (Low)" , 
-	"U0053" : "Vehicle Communication Bus C (High)" , 
-	"U0054" : "Vehicle Communication Bus C (shorted to Bus C)" , 
-	"U0055" : "Vehicle Communication Bus D" , 
-	"U0056" : "Vehicle Communication Bus D (Performance)" , 
-	"U0057" : "Vehicle Communication Bus D (Open)" , 
-	"U0058" : "Vehicle Communication Bus D (Low)" , 
-	"U0059" : "Vehicle Communication Bus D (High)" , 
-	"U0060" : "Vehicle Communication Bus D (Open)" , 
-	"U0061" : "Vehicle Communication Bus D (Low)" , 
-	"U0062" : "Vehicle Communication Bus D (High)" , 
-	"U0063" : "Vehicle Communication Bus D (shorted to Bus D)" , 
-	"U0064" : "Vehicle Communication Bus E" , 
-	"U0065" : "Vehicle Communication Bus E (Performance)" , 
-	"U0066" : "Vehicle Communication Bus E (Open)" , 
-	"U0067" : "Vehicle Communication Bus E (Low)" , 
-	"U0068" : "Vehicle Communication Bus E (High)" , 
-	"U0069" : "Vehicle Communication Bus E (Open)" , 
-	"U0070" : "Vehicle Communication Bus E (Low)" , 
-	"U0071" : "Vehicle Communication Bus E (High)" , 
-	"U0072" : "Vehicle Communication Bus E (shorted to Bus E)" , 
-	"U0073" : "Control Module Communication Bus Off" , 
-	"U0074" : "Reserved by J2012" , 
-	"U0075" : "Reserved by J2012" , 
-	"U0076" : "Reserved by J2012" , 
-	"U0077" : "Reserved by J2012" , 
-	"U0078" : "Reserved by J2012" , 
-	"U0079" : "Reserved by J2012" , 
-	"U0080" : "Reserved by J2012" , 
-	"U0081" : "Reserved by J2012" , 
-	"U0082" : "Reserved by J2012" , 
-	"U0083" : "Reserved by J2012" , 
-	"U0084" : "Reserved by J2012" , 
-	"U0085" : "Reserved by J2012" , 
-	"U0086" : "Reserved by J2012" , 
-	"U0087" : "Reserved by J2012" , 
-	"U0088" : "Reserved by J2012" , 
-	"U0089" : "Reserved by J2012" , 
-	"U0090" : "Reserved by J2012" , 
-	"U0091" : "Reserved by J2012" , 
-	"U0092" : "Reserved by J2012" , 
-	"U0093" : "Reserved by J2012" , 
-	"U0094" : "Reserved by J2012" , 
-	"U0095" : "Reserved by J2012" , 
-	"U0096" : "Reserved by J2012" , 
-	"U0097" : "Reserved by J2012" , 
-	"U0098" : "Reserved by J2012" , 
-	"U0099" : "Reserved by J2012" , 
-	"U0100" : "Lost Communication With ECM/PCM A" , 
-	"U0101" : "Lost Communication with TCM" , 
-	"U0102" : "Lost Communication with Transfer Case Control Module" , 
-	"U0103" : "Lost Communication With Gear Shift Module" , 
-	"U0104" : "Lost Communication With Cruise Control Module" , 
-	"U0105" : "Lost Communication With Fuel Injector Control Module" , 
-	"U0106" : "Lost Communication With Glow Plug Control Module" , 
-	"U0107" : "Lost Communication With Throttle Actuator Control Module" , 
-	"U0108" : "Lost Communication With Alternative Fuel Control Module" , 
-	"U0109" : "Lost Communication With Fuel Pump Control Module" , 
-	"U0110" : "Lost Communication With Drive Motor Control Module" , 
-	"U0111" : "Lost Communication With Battery Energy Control Module 'A'" , 
-	"U0112" : "Lost Communication With Battery Energy Control Module 'B'" , 
-	"U0113" : "Lost Communication With Emissions Critical Control Information" , 
-	"U0114" : "Lost Communication With Four-Wheel Drive Clutch Control Module" , 
-	"U0115" : "Lost Communication With ECM/PCM B" , 
-	"U0116" : "Reserved by J2012" , 
-	"U0117" : "Reserved by J2012" , 
-	"U0118" : "Reserved by J2012" , 
-	"U0119" : "Reserved by J2012" , 
-	"U0120" : "Reserved by J2012" , 
-	"U0121" : "Lost Communication With Anti-Lock Brake System (ABS) Control Module" , 
-	"U0122" : "Lost Communication With Vehicle Dynamics Control Module" , 
-	"U0123" : "Lost Communication With Yaw Rate Sensor Module" , 
-	"U0124" : "Lost Communication With Lateral Acceleration Sensor Module" , 
-	"U0125" : "Lost Communication With Multi-axis Acceleration Sensor Module" , 
-	"U0126" : "Lost Communication With Steering Angle Sensor Module" , 
-	"U0127" : "Lost Communication With Tire Pressure Monitor Module" , 
-	"U0128" : "Lost Communication With Park Brake Control Module" , 
-	"U0129" : "Lost Communication With Brake System Control Module" , 
-	"U0130" : "Lost Communication With Steering Effort Control Module" , 
-	"U0131" : "Lost Communication With Power Steering Control Module" , 
-	"U0132" : "Lost Communication With Ride Level Control Module" , 
-	"U0133" : "Reserved by J2012" , 
-	"U0134" : "Reserved by J2012" , 
-	"U0135" : "Reserved by J2012" , 
-	"U0136" : "Reserved by J2012" , 
-	"U0137" : "Reserved by J2012" , 
-	"U0138" : "Reserved by J2012" , 
-	"U0139" : "Reserved by J2012" , 
-	"U0140" : "Lost Communication With Body Control Module" , 
-	"U0141" : "Lost Communication With Body Control Module 'A'" , 
-	"U0142" : "Lost Communication With Body Control Module 'B'" , 
-	"U0143" : "Lost Communication With Body Control Module 'C'" , 
-	"U0144" : "Lost Communication With Body Control Module 'D'" , 
-	"U0145" : "Lost Communication With Body Control Module 'E'" , 
-	"U0146" : "Lost Communication With Gateway 'A'" , 
-	"U0147" : "Lost Communication With Gateway 'B'" , 
-	"U0148" : "Lost Communication With Gateway 'C'" , 
-	"U0149" : "Lost Communication With Gateway 'D'" , 
-	"U0150" : "Lost Communication With Gateway 'E'" , 
-	"U0151" : "Lost Communication With Restraints Control Module" , 
-	"U0152" : "Lost Communication With Side Restraints Control Module Left" , 
-	"U0153" : "Lost Communication With Side Restraints Control Module Right" , 
-	"U0154" : "Lost Communication With Restraints Occupant Sensing Control Module" , 
-	"U0155" : "Lost Communication With Instrument Panel Cluster (IPC) Control Module" , 
-	"U0156" : "Lost Communication With Information Center 'A'" , 
-	"U0157" : "Lost Communication With Information Center 'B'" , 
-	"U0158" : "Lost Communication With Head Up Display" , 
-	"U0159" : "Lost Communication With Parking Assist Control Module" , 
-	"U0160" : "Lost Communication With Audible Alert Control Module" , 
-	"U0161" : "Lost Communication With Compass Module" , 
-	"U0162" : "Lost Communication With Navigation Display Module" , 
-	"U0163" : "Lost Communication With Navigation Control Module" , 
-	"U0164" : "Lost Communication With HVAC Control Module" , 
-	"U0165" : "Lost Communication With HVAC Control Module Rear" , 
-	"U0166" : "Lost Communication With Auxiliary Heater Control Module" , 
-	"U0167" : "Lost Communication With Vehicle Immobilizer Control Module" , 
-	"U0168" : "Lost Communication With Vehicle Security Control Module" , 
-	"U0169" : "Lost Communication With Sunroof Control Module" , 
-	"U0170" : "Lost Communication With 'Restraints System Sensor A'" , 
-	"U0171" : "Lost Communication With 'Restraints System Sensor B'" , 
-	"U0172" : "Lost Communication With 'Restraints System Sensor C'" , 
-	"U0173" : "Lost Communication With 'Restraints System Sensor D'" , 
-	"U0174" : "Lost Communication With 'Restraints System Sensor E'" , 
-	"U0175" : "Lost Communication With 'Restraints System Sensor F'" , 
-	"U0176" : "Lost Communication With 'Restraints System Sensor G'" , 
-	"U0177" : "Lost Communication With 'Restraints System Sensor H'" , 
-	"U0178" : "Lost Communication With 'Restraints System Sensor I'" , 
-	"U0179" : "Lost Communication With 'Restraints System Sensor J'" , 
-	"U0180" : "Lost Communication With Automatic Lighting Control Module" , 
-	"U0181" : "Lost Communication With Headlamp Leveling Control Module" , 
-	"U0182" : "Lost Communication With Lighting Control Module Front" , 
-	"U0183" : "Lost Communication With Lighting Control Module Rear" , 
-	"U0184" : "Lost Communication With Radio" , 
-	"U0185" : "Lost Communication With Antenna Control Module" , 
-	"U0186" : "Lost Communication With Audio Amplifier" , 
-	"U0187" : "Lost Communication With Digital Disc Player/Changer Module 'A'" , 
-	"U0188" : "Lost Communication With Digital Disc Player/Changer Module 'B'" , 
-	"U0189" : "Lost Communication With Digital Disc Player/Changer Module 'C'" , 
-	"U0190" : "Lost Communication With Digital Disc Player/Changer Module 'D'" , 
-	"U0191" : "Lost Communication With Television" , 
-	"U0192" : "Lost Communication With Personal Computer" , 
-	"U0193" : "Lost Communication With 'Digital Audio Control Module A'" , 
-	"U0194" : "Lost Communication With 'Digital Audio Control Module B'" , 
-	"U0195" : "Lost Communication With Subscription Entertainment Receiver Module" , 
-	"U0196" : "Lost Communication With Rear Seat Entertainment Control Module" , 
-	"U0197" : "Lost Communication With Telephone Control Module" , 
-	"U0198" : "Lost Communication With Telematic Control Module" , 
-	"U0199" : "Lost Communication With 'Door Control Module A'" , 
-	"U0200" : "Lost Communication With 'Door Control Module B'" , 
-	"U0201" : "Lost Communication With 'Door Control Module C'" , 
-	"U0202" : "Lost Communication With 'Door Control Module D'" , 
-	"U0203" : "Lost Communication With 'Door Control Module E'" , 
-	"U0204" : "Lost Communication With 'Door Control Module F'" , 
-	"U0205" : "Lost Communication With 'Door Control Module G'" , 
-	"U0206" : "Lost Communication With Folding Top Control Module" , 
-	"U0207" : "Lost Communication With Moveable Roof Control Module" , 
-	"U0208" : "Lost Communication With 'Seat Control Module A'" , 
-	"U0209" : "Lost Communication With 'Seat Control Module B'" , 
-	"U0210" : "Lost Communication With 'Seat Control Module C'" , 
-	"U0211" : "Lost Communication With 'Seat Control Module D'" , 
-	"U0212" : "Lost Communication With Steering Column Control Module" , 
-	"U0213" : "Lost Communication With Mirror Control Module" , 
-	"U0214" : "Lost Communication With Remote Function Actuation" , 
-	"U0215" : "Lost Communication With 'Door Switch A'" , 
-	"U0216" : "Lost Communication With 'Door Switch B'" , 
-	"U0217" : "Lost Communication With 'Door Switch C'" , 
-	"U0218" : "Lost Communication With 'Door Switch D'" , 
-	"U0219" : "Lost Communication With 'Door Switch E'" , 
-	"U0220" : "Lost Communication With 'Door Switch F'" , 
-	"U0221" : "Lost Communication With 'Door Switch G'" , 
-	"U0222" : "Lost Communication With 'Door Window Motor A'" , 
-	"U0223" : "Lost Communication With 'Door Window Motor B'" , 
-	"U0224" : "Lost Communication With 'Door Window Motor C'" , 
-	"U0225" : "Lost Communication With 'Door Window Motor D'" , 
-	"U0226" : "Lost Communication With 'Door Window Motor E'" , 
-	"U0227" : "Lost Communication With 'Door Window Motor F'" , 
-	"U0228" : "Lost Communication With 'Door Window Motor G'" , 
-	"U0229" : "Lost Communication With Heated Steering Wheel Module" , 
-	"U0230" : "Lost Communication With Rear Gate Module" , 
-	"U0231" : "Lost Communication With Rain Sensing Module" , 
-	"U0232" : "Lost Communication With Side Obstacle Detection Control Module Left" , 
-	"U0233" : "Lost Communication With Side Obstacle Detection Control Module Right" , 
-	"U0234" : "Lost Communication With Convenience Recall Module" , 
-	"U0235" : "Lost Communication With Cruise Control Front Distance Range Sensor" , 
-	"U0300" : "Internal Control Module Software Incompatibility" , 
-	"U0301" : "Software Incompatibility with ECM/PCM" , 
-	"U0302" : "Software Incompatibility with Transmission Control Module" , 
-	"U0303" : "Software Incompatibility with Transfer Case Control Module" , 
-	"U0304" : "Software Incompatibility with Gear Shift Control Module" , 
-	"U0305" : "Software Incompatibility with Cruise Control Module" , 
-	"U0306" : "Software Incompatibility with Fuel Injector Control Module" , 
-	"U0307" : "Software Incompatibility with Glow Plug Control Module" , 
-	"U0308" : "Software Incompatibility with Throttle Actuator Control Module" , 
-	"U0309" : "Software Incompatibility with Alternative Fuel Control Module" , 
-	"U0310" : "Software Incompatibility with Fuel Pump Control Module" , 
-	"U0311" : "Software Incompatibility with Drive Motor Control Module" , 
-	"U0312" : "Software Incompatibility with Battery Energy Control Module A" , 
-	"U0313" : "Software Incompatibility with Battery Energy Control Module B" , 
-	"U0314" : "Software Incompatibility with Four-Wheel Drive Clutch Control Module" , 
-	"U0315" : "Software Incompatibility with Anti-Lock Brake System Control Module" , 
-	"U0316" : "Software Incompatibility with Vehicle Dynamics Control Module" , 
-	"U0317" : "Software Incompatibility with Park Brake Control Module" , 
-	"U0318" : "Software Incompatibility with Brake System Control Module" , 
-	"U0319" : "Software Incompatibility with Steering Effort Control Module" , 
-	"U0320" : "Software Incompatibility with Power Steering Control Module" , 
-	"U0321" : "Software Incompatibility with Ride Level Control Module" , 
-	"U0322" : "Software Incompatibility with Body Control Module" , 
-	"U0323" : "Software Incompatibility with Instrument Panel Control Module" , 
-	"U0324" : "Software Incompatibility with HVAC Control Module" , 
-	"U0325" : "Software Incompatibility with Auxiliary Heater Control Module" , 
-	"U0326" : "Software Incompatibility with Vehicle Immobilizer Control Module" , 
-	"U0327" : "Software Incompatibility with Vehicle Security Control Module" , 
-	"U0328" : "Software Incompatibility with Steering Angle Sensor Module" , 
-	"U0329" : "Software Incompatibility with Steering Column Control Module" , 
-	"U0330" : "Software Incompatibility with Tire Pressure Monitor Module" , 
-	"U0331" : "Software Incompatibility with Body Control Module 'A'" , 
-	"U0400" : "Invalid Data Received" , 
-	"U0401" : "Invalid Data Received From ECM/PCM" , 
-	"U0402" : "Invalid Data Received From Transmission Control Module" , 
-	"U0403" : "Invalid Data Received From Transfer Case Control Module" , 
-	"U0404" : "Invalid Data Received From Gear Shift Control Module" , 
-	"U0405" : "Invalid Data Received From Cruise Control Module" , 
-	"U0406" : "Invalid Data Received From Fuel Injector Control Module" , 
-	"U0407" : "Invalid Data Received From Glow Plug Control Module" , 
-	"U0408" : "Invalid Data Received From Throttle Actuator Control Module" , 
-	"U0409" : "Invalid Data Received From Alternative Fuel Control Module" , 
-	"U0410" : "Invalid Data Received From Fuel Pump Control Module" , 
-	"U0411" : "Invalid Data Received From Drive Motor Control Module" , 
-	"U0412" : "Invalid Data Received From Battery Energy Control Module A" , 
-	"U0413" : "Invalid Data Received From Battery Energy Control Module B" , 
-	"U0414" : "Invalid Data Received From Four-Wheel Drive Clutch Control Module" , 
-	"U0415" : "Invalid Data Received From Anti-Lock Brake System Control Module" , 
-	"U0416" : "Invalid Data Received From Vehicle Dynamics Control Module" , 
-	"U0417" : "Invalid Data Received From Park Brake Control Module" , 
-	"U0418" : "Invalid Data Received From Brake System Control Module" , 
-	"U0419" : "Invalid Data Received From Steering Effort Control Module" , 
-	"U0420" : "Invalid Data Received From Power Steering Control Module" , 
-	"U0421" : "Invalid Data Received From Ride Level Control Module" , 
-	"U0422" : "Invalid Data Received From Body Control Module" , 
-	"U0423" : "Invalid Data Received From Instrument Panel Control Module" , 
-	"U0424" : "Invalid Data Received From HVAC Control Module" , 
-	"U0425" : "Invalid Data Received From Auxiliary Heater Control Module" , 
-	"U0426" : "Invalid Data Received From Vehicle Immobilizer Control Module" , 
-	"U0427" : "Invalid Data Received From Vehicle Security Control Module" , 
-	"U0428" : "Invalid Data Received From Steering Angle Sensor Module" , 
-	"U0429" : "Invalid Data Received From Steering Column Control Module" , 
-	"U0430" : "Invalid Data Received From Tire Pressure Monitor Module" , 
-	"U0431" : "Invalid Data Received From Body Control Module 'A'" 
+		"U0001" : "High Speed CAN Communication Bus" ,
+	"U0002" : "High Speed CAN Communication Bus (Performance)" ,
+	"U0003" : "High Speed CAN Communication Bus (Open)" ,
+	"U0004" : "High Speed CAN Communication Bus (Low)" ,
+	"U0005" : "High Speed CAN Communication Bus (High)" ,
+	"U0006" : "High Speed CAN Communication Bus (Open)" ,
+	"U0007" : "High Speed CAN Communication Bus (Low)" ,
+	"U0008" : "High Speed CAN Communication Bus (High)" ,
+	"U0009" : "High Speed CAN Communication Bus (shorted to Bus)" ,
+	"U0010" : "Medium Speed CAN Communication Bus" ,
+	"U0011" : "Medium Speed CAN Communication Bus (Performance)" ,
+	"U0012" : "Medium Speed CAN Communication Bus (Open)" ,
+	"U0013" : "Medium Speed CAN Communication Bus (Low)" ,
+	"U0014" : "Medium Speed CAN Communication Bus (High)" ,
+	"U0015" : "Medium Speed CAN Communication Bus (Open)" ,
+	"U0016" : "Medium Speed CAN Communication Bus (Low)" ,
+	"U0017" : "Medium Speed CAN Communication Bus (High)" ,
+	"U0018" : "Medium Speed CAN Communication Bus (shorted to Bus)" ,
+	"U0019" : "Low Speed CAN Communication Bus" ,
+	"U0020" : "Low Speed CAN Communication Bus (Performance)" ,
+	"U0021" : "Low Speed CAN Communication Bus (Open)" ,
+	"U0022" : "Low Speed CAN Communication Bus (Low)" ,
+	"U0023" : "Low Speed CAN Communication Bus (High)" ,
+	"U0024" : "Low Speed CAN Communication Bus (Open)" ,
+	"U0025" : "Low Speed CAN Communication Bus (Low)" ,
+	"U0026" : "Low Speed CAN Communication Bus (High)" ,
+	"U0027" : "Low Speed CAN Communication Bus (shorted to Bus)" ,
+	"U0028" : "Vehicle Communication Bus A" ,
+	"U0029" : "Vehicle Communication Bus A (Performance)" ,
+	"U0030" : "Vehicle Communication Bus A (Open)" ,
+	"U0031" : "Vehicle Communication Bus A (Low)" ,
+	"U0032" : "Vehicle Communication Bus A (High)" ,
+	"U0033" : "Vehicle Communication Bus A (Open)" ,
+	"U0034" : "Vehicle Communication Bus A (Low)" ,
+	"U0035" : "Vehicle Communication Bus A (High)" ,
+	"U0036" : "Vehicle Communication Bus A (shorted to Bus A)" ,
+	"U0037" : "Vehicle Communication Bus B" ,
+	"U0038" : "Vehicle Communication Bus B (Performance)" ,
+	"U0039" : "Vehicle Communication Bus B (Open)" ,
+	"U0040" : "Vehicle Communication Bus B (Low)" ,
+	"U0041" : "Vehicle Communication Bus B (High)" ,
+	"U0042" : "Vehicle Communication Bus B (Open)" ,
+	"U0043" : "Vehicle Communication Bus B (Low)" ,
+	"U0044" : "Vehicle Communication Bus B (High)" ,
+	"U0045" : "Vehicle Communication Bus B (shorted to Bus B)" ,
+	"U0046" : "Vehicle Communication Bus C" ,
+	"U0047" : "Vehicle Communication Bus C (Performance)" ,
+	"U0048" : "Vehicle Communication Bus C (Open)" ,
+	"U0049" : "Vehicle Communication Bus C (Low)" ,
+	"U0050" : "Vehicle Communication Bus C (High)" ,
+	"U0051" : "Vehicle Communication Bus C (Open)" ,
+	"U0052" : "Vehicle Communication Bus C (Low)" ,
+	"U0053" : "Vehicle Communication Bus C (High)" ,
+	"U0054" : "Vehicle Communication Bus C (shorted to Bus C)" ,
+	"U0055" : "Vehicle Communication Bus D" ,
+	"U0056" : "Vehicle Communication Bus D (Performance)" ,
+	"U0057" : "Vehicle Communication Bus D (Open)" ,
+	"U0058" : "Vehicle Communication Bus D (Low)" ,
+	"U0059" : "Vehicle Communication Bus D (High)" ,
+	"U0060" : "Vehicle Communication Bus D (Open)" ,
+	"U0061" : "Vehicle Communication Bus D (Low)" ,
+	"U0062" : "Vehicle Communication Bus D (High)" ,
+	"U0063" : "Vehicle Communication Bus D (shorted to Bus D)" ,
+	"U0064" : "Vehicle Communication Bus E" ,
+	"U0065" : "Vehicle Communication Bus E (Performance)" ,
+	"U0066" : "Vehicle Communication Bus E (Open)" ,
+	"U0067" : "Vehicle Communication Bus E (Low)" ,
+	"U0068" : "Vehicle Communication Bus E (High)" ,
+	"U0069" : "Vehicle Communication Bus E (Open)" ,
+	"U0070" : "Vehicle Communication Bus E (Low)" ,
+	"U0071" : "Vehicle Communication Bus E (High)" ,
+	"U0072" : "Vehicle Communication Bus E (shorted to Bus E)" ,
+	"U0073" : "Control Module Communication Bus Off" ,
+	"U0074" : "Reserved by J2012" ,
+	"U0075" : "Reserved by J2012" ,
+	"U0076" : "Reserved by J2012" ,
+	"U0077" : "Reserved by J2012" ,
+	"U0078" : "Reserved by J2012" ,
+	"U0079" : "Reserved by J2012" ,
+	"U0080" : "Reserved by J2012" ,
+	"U0081" : "Reserved by J2012" ,
+	"U0082" : "Reserved by J2012" ,
+	"U0083" : "Reserved by J2012" ,
+	"U0084" : "Reserved by J2012" ,
+	"U0085" : "Reserved by J2012" ,
+	"U0086" : "Reserved by J2012" ,
+	"U0087" : "Reserved by J2012" ,
+	"U0088" : "Reserved by J2012" ,
+	"U0089" : "Reserved by J2012" ,
+	"U0090" : "Reserved by J2012" ,
+	"U0091" : "Reserved by J2012" ,
+	"U0092" : "Reserved by J2012" ,
+	"U0093" : "Reserved by J2012" ,
+	"U0094" : "Reserved by J2012" ,
+	"U0095" : "Reserved by J2012" ,
+	"U0096" : "Reserved by J2012" ,
+	"U0097" : "Reserved by J2012" ,
+	"U0098" : "Reserved by J2012" ,
+	"U0099" : "Reserved by J2012" ,
+	"U0100" : "Lost Communication With ECM/PCM A" ,
+	"U0101" : "Lost Communication with TCM" ,
+	"U0102" : "Lost Communication with Transfer Case Control Module" ,
+	"U0103" : "Lost Communication With Gear Shift Module" ,
+	"U0104" : "Lost Communication With Cruise Control Module" ,
+	"U0105" : "Lost Communication With Fuel Injector Control Module" ,
+	"U0106" : "Lost Communication With Glow Plug Control Module" ,
+	"U0107" : "Lost Communication With Throttle Actuator Control Module" ,
+	"U0108" : "Lost Communication With Alternative Fuel Control Module" ,
+	"U0109" : "Lost Communication With Fuel Pump Control Module" ,
+	"U0110" : "Lost Communication With Drive Motor Control Module" ,
+	"U0111" : "Lost Communication With Battery Energy Control Module 'A'" ,
+	"U0112" : "Lost Communication With Battery Energy Control Module 'B'" ,
+	"U0113" : "Lost Communication With Emissions Critical Control Information" ,
+	"U0114" : "Lost Communication With Four-Wheel Drive Clutch Control Module" ,
+	"U0115" : "Lost Communication With ECM/PCM B" ,
+	"U0116" : "Reserved by J2012" ,
+	"U0117" : "Reserved by J2012" ,
+	"U0118" : "Reserved by J2012" ,
+	"U0119" : "Reserved by J2012" ,
+	"U0120" : "Reserved by J2012" ,
+	"U0121" : "Lost Communication With Anti-Lock Brake System (ABS) Control Module" ,
+	"U0122" : "Lost Communication With Vehicle Dynamics Control Module" ,
+	"U0123" : "Lost Communication With Yaw Rate Sensor Module" ,
+	"U0124" : "Lost Communication With Lateral Acceleration Sensor Module" ,
+	"U0125" : "Lost Communication With Multi-axis Acceleration Sensor Module" ,
+	"U0126" : "Lost Communication With Steering Angle Sensor Module" ,
+	"U0127" : "Lost Communication With Tire Pressure Monitor Module" ,
+	"U0128" : "Lost Communication With Park Brake Control Module" ,
+	"U0129" : "Lost Communication With Brake System Control Module" ,
+	"U0130" : "Lost Communication With Steering Effort Control Module" ,
+	"U0131" : "Lost Communication With Power Steering Control Module" ,
+	"U0132" : "Lost Communication With Ride Level Control Module" ,
+	"U0133" : "Reserved by J2012" ,
+	"U0134" : "Reserved by J2012" ,
+	"U0135" : "Reserved by J2012" ,
+	"U0136" : "Reserved by J2012" ,
+	"U0137" : "Reserved by J2012" ,
+	"U0138" : "Reserved by J2012" ,
+	"U0139" : "Reserved by J2012" ,
+	"U0140" : "Lost Communication With Body Control Module" ,
+	"U0141" : "Lost Communication With Body Control Module 'A'" ,
+	"U0142" : "Lost Communication With Body Control Module 'B'" ,
+	"U0143" : "Lost Communication With Body Control Module 'C'" ,
+	"U0144" : "Lost Communication With Body Control Module 'D'" ,
+	"U0145" : "Lost Communication With Body Control Module 'E'" ,
+	"U0146" : "Lost Communication With Gateway 'A'" ,
+	"U0147" : "Lost Communication With Gateway 'B'" ,
+	"U0148" : "Lost Communication With Gateway 'C'" ,
+	"U0149" : "Lost Communication With Gateway 'D'" ,
+	"U0150" : "Lost Communication With Gateway 'E'" ,
+	"U0151" : "Lost Communication With Restraints Control Module" ,
+	"U0152" : "Lost Communication With Side Restraints Control Module Left" ,
+	"U0153" : "Lost Communication With Side Restraints Control Module Right" ,
+	"U0154" : "Lost Communication With Restraints Occupant Sensing Control Module" ,
+	"U0155" : "Lost Communication With Instrument Panel Cluster (IPC) Control Module" ,
+	"U0156" : "Lost Communication With Information Center 'A'" ,
+	"U0157" : "Lost Communication With Information Center 'B'" ,
+	"U0158" : "Lost Communication With Head Up Display" ,
+	"U0159" : "Lost Communication With Parking Assist Control Module" ,
+	"U0160" : "Lost Communication With Audible Alert Control Module" ,
+	"U0161" : "Lost Communication With Compass Module" ,
+	"U0162" : "Lost Communication With Navigation Display Module" ,
+	"U0163" : "Lost Communication With Navigation Control Module" ,
+	"U0164" : "Lost Communication With HVAC Control Module" ,
+	"U0165" : "Lost Communication With HVAC Control Module Rear" ,
+	"U0166" : "Lost Communication With Auxiliary Heater Control Module" ,
+	"U0167" : "Lost Communication With Vehicle Immobilizer Control Module" ,
+	"U0168" : "Lost Communication With Vehicle Security Control Module" ,
+	"U0169" : "Lost Communication With Sunroof Control Module" ,
+	"U0170" : "Lost Communication With 'Restraints System Sensor A'" ,
+	"U0171" : "Lost Communication With 'Restraints System Sensor B'" ,
+	"U0172" : "Lost Communication With 'Restraints System Sensor C'" ,
+	"U0173" : "Lost Communication With 'Restraints System Sensor D'" ,
+	"U0174" : "Lost Communication With 'Restraints System Sensor E'" ,
+	"U0175" : "Lost Communication With 'Restraints System Sensor F'" ,
+	"U0176" : "Lost Communication With 'Restraints System Sensor G'" ,
+	"U0177" : "Lost Communication With 'Restraints System Sensor H'" ,
+	"U0178" : "Lost Communication With 'Restraints System Sensor I'" ,
+	"U0179" : "Lost Communication With 'Restraints System Sensor J'" ,
+	"U0180" : "Lost Communication With Automatic Lighting Control Module" ,
+	"U0181" : "Lost Communication With Headlamp Leveling Control Module" ,
+	"U0182" : "Lost Communication With Lighting Control Module Front" ,
+	"U0183" : "Lost Communication With Lighting Control Module Rear" ,
+	"U0184" : "Lost Communication With Radio" ,
+	"U0185" : "Lost Communication With Antenna Control Module" ,
+	"U0186" : "Lost Communication With Audio Amplifier" ,
+	"U0187" : "Lost Communication With Digital Disc Player/Changer Module 'A'" ,
+	"U0188" : "Lost Communication With Digital Disc Player/Changer Module 'B'" ,
+	"U0189" : "Lost Communication With Digital Disc Player/Changer Module 'C'" ,
+	"U0190" : "Lost Communication With Digital Disc Player/Changer Module 'D'" ,
+	"U0191" : "Lost Communication With Television" ,
+	"U0192" : "Lost Communication With Personal Computer" ,
+	"U0193" : "Lost Communication With 'Digital Audio Control Module A'" ,
+	"U0194" : "Lost Communication With 'Digital Audio Control Module B'" ,
+	"U0195" : "Lost Communication With Subscription Entertainment Receiver Module" ,
+	"U0196" : "Lost Communication With Rear Seat Entertainment Control Module" ,
+	"U0197" : "Lost Communication With Telephone Control Module" ,
+	"U0198" : "Lost Communication With Telematic Control Module" ,
+	"U0199" : "Lost Communication With 'Door Control Module A'" ,
+	"U0200" : "Lost Communication With 'Door Control Module B'" ,
+	"U0201" : "Lost Communication With 'Door Control Module C'" ,
+	"U0202" : "Lost Communication With 'Door Control Module D'" ,
+	"U0203" : "Lost Communication With 'Door Control Module E'" ,
+	"U0204" : "Lost Communication With 'Door Control Module F'" ,
+	"U0205" : "Lost Communication With 'Door Control Module G'" ,
+	"U0206" : "Lost Communication With Folding Top Control Module" ,
+	"U0207" : "Lost Communication With Moveable Roof Control Module" ,
+	"U0208" : "Lost Communication With 'Seat Control Module A'" ,
+	"U0209" : "Lost Communication With 'Seat Control Module B'" ,
+	"U0210" : "Lost Communication With 'Seat Control Module C'" ,
+	"U0211" : "Lost Communication With 'Seat Control Module D'" ,
+	"U0212" : "Lost Communication With Steering Column Control Module" ,
+	"U0213" : "Lost Communication With Mirror Control Module" ,
+	"U0214" : "Lost Communication With Remote Function Actuation" ,
+	"U0215" : "Lost Communication With 'Door Switch A'" ,
+	"U0216" : "Lost Communication With 'Door Switch B'" ,
+	"U0217" : "Lost Communication With 'Door Switch C'" ,
+	"U0218" : "Lost Communication With 'Door Switch D'" ,
+	"U0219" : "Lost Communication With 'Door Switch E'" ,
+	"U0220" : "Lost Communication With 'Door Switch F'" ,
+	"U0221" : "Lost Communication With 'Door Switch G'" ,
+	"U0222" : "Lost Communication With 'Door Window Motor A'" ,
+	"U0223" : "Lost Communication With 'Door Window Motor B'" ,
+	"U0224" : "Lost Communication With 'Door Window Motor C'" ,
+	"U0225" : "Lost Communication With 'Door Window Motor D'" ,
+	"U0226" : "Lost Communication With 'Door Window Motor E'" ,
+	"U0227" : "Lost Communication With 'Door Window Motor F'" ,
+	"U0228" : "Lost Communication With 'Door Window Motor G'" ,
+	"U0229" : "Lost Communication With Heated Steering Wheel Module" ,
+	"U0230" : "Lost Communication With Rear Gate Module" ,
+	"U0231" : "Lost Communication With Rain Sensing Module" ,
+	"U0232" : "Lost Communication With Side Obstacle Detection Control Module Left" ,
+	"U0233" : "Lost Communication With Side Obstacle Detection Control Module Right" ,
+	"U0234" : "Lost Communication With Convenience Recall Module" ,
+	"U0235" : "Lost Communication With Cruise Control Front Distance Range Sensor" ,
+	"U0300" : "Internal Control Module Software Incompatibility" ,
+	"U0301" : "Software Incompatibility with ECM/PCM" ,
+	"U0302" : "Software Incompatibility with Transmission Control Module" ,
+	"U0303" : "Software Incompatibility with Transfer Case Control Module" ,
+	"U0304" : "Software Incompatibility with Gear Shift Control Module" ,
+	"U0305" : "Software Incompatibility with Cruise Control Module" ,
+	"U0306" : "Software Incompatibility with Fuel Injector Control Module" ,
+	"U0307" : "Software Incompatibility with Glow Plug Control Module" ,
+	"U0308" : "Software Incompatibility with Throttle Actuator Control Module" ,
+	"U0309" : "Software Incompatibility with Alternative Fuel Control Module" ,
+	"U0310" : "Software Incompatibility with Fuel Pump Control Module" ,
+	"U0311" : "Software Incompatibility with Drive Motor Control Module" ,
+	"U0312" : "Software Incompatibility with Battery Energy Control Module A" ,
+	"U0313" : "Software Incompatibility with Battery Energy Control Module B" ,
+	"U0314" : "Software Incompatibility with Four-Wheel Drive Clutch Control Module" ,
+	"U0315" : "Software Incompatibility with Anti-Lock Brake System Control Module" ,
+	"U0316" : "Software Incompatibility with Vehicle Dynamics Control Module" ,
+	"U0317" : "Software Incompatibility with Park Brake Control Module" ,
+	"U0318" : "Software Incompatibility with Brake System Control Module" ,
+	"U0319" : "Software Incompatibility with Steering Effort Control Module" ,
+	"U0320" : "Software Incompatibility with Power Steering Control Module" ,
+	"U0321" : "Software Incompatibility with Ride Level Control Module" ,
+	"U0322" : "Software Incompatibility with Body Control Module" ,
+	"U0323" : "Software Incompatibility with Instrument Panel Control Module" ,
+	"U0324" : "Software Incompatibility with HVAC Control Module" ,
+	"U0325" : "Software Incompatibility with Auxiliary Heater Control Module" ,
+	"U0326" : "Software Incompatibility with Vehicle Immobilizer Control Module" ,
+	"U0327" : "Software Incompatibility with Vehicle Security Control Module" ,
+	"U0328" : "Software Incompatibility with Steering Angle Sensor Module" ,
+	"U0329" : "Software Incompatibility with Steering Column Control Module" ,
+	"U0330" : "Software Incompatibility with Tire Pressure Monitor Module" ,
+	"U0331" : "Software Incompatibility with Body Control Module 'A'" ,
+	"U0400" : "Invalid Data Received" ,
+	"U0401" : "Invalid Data Received From ECM/PCM" ,
+	"U0402" : "Invalid Data Received From Transmission Control Module" ,
+	"U0403" : "Invalid Data Received From Transfer Case Control Module" ,
+	"U0404" : "Invalid Data Received From Gear Shift Control Module" ,
+	"U0405" : "Invalid Data Received From Cruise Control Module" ,
+	"U0406" : "Invalid Data Received From Fuel Injector Control Module" ,
+	"U0407" : "Invalid Data Received From Glow Plug Control Module" ,
+	"U0408" : "Invalid Data Received From Throttle Actuator Control Module" ,
+	"U0409" : "Invalid Data Received From Alternative Fuel Control Module" ,
+	"U0410" : "Invalid Data Received From Fuel Pump Control Module" ,
+	"U0411" : "Invalid Data Received From Drive Motor Control Module" ,
+	"U0412" : "Invalid Data Received From Battery Energy Control Module A" ,
+	"U0413" : "Invalid Data Received From Battery Energy Control Module B" ,
+	"U0414" : "Invalid Data Received From Four-Wheel Drive Clutch Control Module" ,
+	"U0415" : "Invalid Data Received From Anti-Lock Brake System Control Module" ,
+	"U0416" : "Invalid Data Received From Vehicle Dynamics Control Module" ,
+	"U0417" : "Invalid Data Received From Park Brake Control Module" ,
+	"U0418" : "Invalid Data Received From Brake System Control Module" ,
+	"U0419" : "Invalid Data Received From Steering Effort Control Module" ,
+	"U0420" : "Invalid Data Received From Power Steering Control Module" ,
+	"U0421" : "Invalid Data Received From Ride Level Control Module" ,
+	"U0422" : "Invalid Data Received From Body Control Module" ,
+	"U0423" : "Invalid Data Received From Instrument Panel Control Module" ,
+	"U0424" : "Invalid Data Received From HVAC Control Module" ,
+	"U0425" : "Invalid Data Received From Auxiliary Heater Control Module" ,
+	"U0426" : "Invalid Data Received From Vehicle Immobilizer Control Module" ,
+	"U0427" : "Invalid Data Received From Vehicle Security Control Module" ,
+	"U0428" : "Invalid Data Received From Steering Angle Sensor Module" ,
+	"U0429" : "Invalid Data Received From Steering Column Control Module" ,
+	"U0430" : "Invalid Data Received From Tire Pressure Monitor Module" ,
+	"U0431" : "Invalid Data Received From Body Control Module 'A'"
 
 }
 
