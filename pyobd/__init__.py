@@ -108,7 +108,7 @@ class OBDPort:
 					break;
 				if buffer != ""or c != ">": #if something is in buffer, add everything
 					buffer = buffer + c
-				if time.clock()-starttime > timeout:
+				if time.clock()-starttime > self.timeout:
 					break;
 				print(buffer)
 			if(buffer == ""):
@@ -2461,22 +2461,3 @@ pcode_classes = {
 	"P19XX": "Transmission",
 	
 	}
-
-ptest= [
-	 "DTCs:",
-	 "MIL:",
-	 #A
-	 "Misfire:",
-	 "Fuel system:",
-	 "Components:",
-	 #B,D
-	 "Catalyst:",
-	 "Heated Catalyst:",
-	 "Evaporative system:",
-	 "Secondary Air System:",
-	 "A/C Refrigerant:",
-	 "Oxygen Sensor:",
-	 "Oxygen Sensor Heater:",
-	 "EGR SystemC7:",
-]
-
