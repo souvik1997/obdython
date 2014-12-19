@@ -2,8 +2,9 @@
 ###########################################################################
 # odb_io.py
 #
-# Copyright 2004 Donour Sizemore (donour@uchicago.edu)
+# Copyright 2014 Souvik Banerjee (souvik@souvik.me)
 # Copyright 2009 Secons Ltd. (www.obdtester.com)
+# Copyright 2004 Donour Sizemore (donour@uchicago.edu)
 #
 # This file is part of pyOBD.
 #
