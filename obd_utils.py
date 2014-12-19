@@ -19,6 +19,13 @@ def scanSerial():
       except serial.SerialException:
         pass
     for i in range(256):
+      try: #scan rfcomm (bluetooth)
+        s = serial.Serial("/dev/rfcomm"+str(i))
+        available.append(s.portstr)
+        s.close()   # explicit close 'cause of delayed GC in java
+      except serial.SerialException:
+        pass
+    for i in range(256):
       try:
         s = serial.Serial("/dev/ttyUSB"+str(i))
         available.append(s.portstr)
