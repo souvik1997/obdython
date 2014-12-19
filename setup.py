@@ -17,6 +17,7 @@ setup(
 	license = "GPL",
 	keywords = "OBD-II library",
 	url = "https://souvik.me/cgit/pyobd",
-	packages=['pyobd', 'tests'],
+	packages=['pyobd'],
+	install_requires=['markdown'],
 	long_description=read('README'),
 )
