@@ -92,7 +92,7 @@ class OBD_Recorder():
             
             
 logitems = ["rpm", "speed", "throttle_pos", "load"]
-o = OBD_Recorder('/home/pi/logs/', logitems)
+o = OBD_Recorder('/tmp/', logitems)
 o.connect()
 if not o.is_connected():
     print("Not connected")
