@@ -18,6 +18,6 @@ setup(
 	keywords = "OBD-II library",
 	url = "https://souvik.me/cgit/pyobd",
 	packages=['pyobd'],
-	install_requires=['markdown'],
+	install_requires=['serial'],
 	long_description=read('README'),
 )
