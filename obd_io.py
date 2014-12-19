@@ -119,7 +119,7 @@ class OBDPort:
 		code = code[4:]
 		return code
 
-	 def get_result(self):
+	def get_result(self):
 		"""Internal use only: not a public interface"""
 		#time.sleep(0.01)
 		repeat_count = 0
