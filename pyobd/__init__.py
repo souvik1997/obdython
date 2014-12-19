@@ -107,7 +107,7 @@ class OBDPort:
 					break;
 				if buffer != ""or c != ">": #if something is in buffer, add everything
 					buffer = buffer + c
-				if (time.clock()-starttime > timeout)
+				if time.clock()-starttime > timeout:
 					break;
 				print(buffer)
 			if(buffer == ""):
@@ -156,7 +156,6 @@ def convert(code,function, offset):
 		return function(code[offset],code[offset+1],code[offset+2],code[offset+3])
 	else:
 		return 0
-
 
 def status_since_dtc_cleared(a,b,c,d):
 	bits=  hex_to_bitstring(a,b,c,d)
