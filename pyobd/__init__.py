@@ -226,22 +226,22 @@ def status_since_dtc_cleared(a,b,c,d):
 	sparkcompress = bits[position_bitstring(0xB3)]
 	if (sparkcompress):
 		res['spark_ignition'] = 1
-		res['catalyst_test_available'] = bits[position_bitstring(0xC0)] | ~bits[position_bitstring(0xD0)]
-		res['heated_catalyst_test_available'] = bits[position_bitstring(0xC1)] | ~bits[position_bitstring(0xD1)]
-		res['evaporative_system_test_available'] = bits[position_bitstring(0xC2)] | ~bits[position_bitstring(0xD2)]
-		res['secondary_air_system_test_available'] = bits[position_bitstring(0xC3)] | ~bits[position_bitstring(0xD3)]
-		res['ac_refrigerant_test_available'] = bits[position_bitstring(0xC4)] | ~bits[position_bitstring(0xD4)]
-		res['oxygen_sensor_test_available'] = bits[position_bitstring(0xC5)] | ~bits[position_bitstring(0xD5)]
-		res['oxygen_sensor_heater_test_available'] = bits[position_bitstring(0xC6)] | ~bits[position_bitstring(0xD6)]
-		res['egr_system_test_available'] = bits[position_bitstring(0xC7)] | ~bits[position_bitstring(0xD7)]
+		res['catalyst_test_available'] = bits[position_bitstring(0xC0)] | (1-bits[position_bitstring(0xD0)])
+		res['heated_catalyst_test_available'] = bits[position_bitstring(0xC1)] | (1-bits[position_bitstring(0xD1)])
+		res['evaporative_system_test_available'] = bits[position_bitstring(0xC2)] | (1-bits[position_bitstring(0xD2)])
+		res['secondary_air_system_test_available'] = bits[position_bitstring(0xC3)] | (1-bits[position_bitstring(0xD3)])
+		res['ac_refrigerant_test_available'] = bits[position_bitstring(0xC4)] | (1-bits[position_bitstring(0xD4)])
+		res['oxygen_sensor_test_available'] = bits[position_bitstring(0xC5)] | (1-bits[position_bitstring(0xD5)])
+		res['oxygen_sensor_heater_test_available'] = bits[position_bitstring(0xC6)] | (1-bits[position_bitstring(0xD6)])
+		res['egr_system_test_available'] = bits[position_bitstring(0xC7)] | (1-bits[position_bitstring(0xD7)])
 	else:
 		res['compression_ignition'] = 1
-		res['nmhc_catalyst_test_available'] = bits[position_bitstring(0xC0)] | ~bits[position_bitstring(0xD0)]
-		res['nox_scr_test_available'] = bits[position_bitstring(0xC1)] | ~bits[position_bitstring(0xD1)]
-		res['boost_pressure_test_available'] = bits[position_bitstring(0xC3)] | ~bits[position_bitstring(0xD3)]
-		res['exhaust_gas_sensor_test_available'] = bits[position_bitstring(0xC5)] | ~bits[position_bitstring(0xD5)]
-		res['pm_filter_test_available'] = bits[position_bitstring(0xC6)] | ~bits[position_bitstring(0xD6)]
-		res['egr_vvt_system_test_available'] = bits[position_bitstring(0xC7)] | ~bits[position_bitstring(0xD7)]
+		res['nmhc_catalyst_test_available'] = bits[position_bitstring(0xC0)] | (1-bits[position_bitstring(0xD0)])
+		res['nox_scr_test_available'] = bits[position_bitstring(0xC1)] | (1-bits[position_bitstring(0xD1)])
+		res['boost_pressure_test_available'] = bits[position_bitstring(0xC3)] | (1-bits[position_bitstring(0xD3)])
+		res['exhaust_gas_sensor_test_available'] = bits[position_bitstring(0xC5)] | (1-bits[position_bitstring(0xD5)])
+		res['pm_filter_test_available'] = bits[position_bitstring(0xC6)] | (1-bits[position_bitstring(0xD6)])
+		res['egr_vvt_system_test_available'] = bits[position_bitstring(0xC7)] | (1-bits[position_bitstring(0xD7)])
 	return res
 
 def fuel_system_status(a):
