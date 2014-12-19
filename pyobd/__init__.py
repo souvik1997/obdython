@@ -29,10 +29,6 @@ import platform
 import inspect
 from math import ceil
 
-GET_DTC_COMMAND = "03"
-CLEAR_DTC_COMMAND = "04"
-GET_FREEZE_DTC_COMMAND = "07"
-
 class OBDPort:
 	"""OBDPort abstracts all communication with OBD-II device."""
 	def __init__(self,portnum, baud=38400, databits=8, par=serial.PARITY_NONE, stopbits=1, timeout=60):
@@ -40,6 +36,7 @@ class OBDPort:
 		self.ELMver = "Unknown"
 		self.State = 1 #state SERIAL is 1 connected, 0 disconnected (connection failed)
 		self.port = None
+		self.timeout = timeout
 		print("Opening interface (serial port)")
 		try:
 			self.port = serial.Serial(portnum,baud, parity = par, stopbits = stopbits, bytesize = databits,timeout = timeout)
@@ -95,6 +92,7 @@ class OBDPort:
 		repeat_count = 0
 		if self.port is not None:
 			buffer = ""
+			starttime = time.time()
 			while 1:
 				c = self.port.read(1).decode('utf-8')
 				if len(c) == 0:
@@ -109,6 +107,8 @@ class OBDPort:
 					break;
 				if buffer != ""or c != ">": #if something is in buffer, add everything
 					buffer = buffer + c
+				if (time.clock()-starttime > timeout)
+					break;
 				print(buffer)
 			if(buffer == ""):
 				return None
@@ -142,66 +142,6 @@ class OBDPort:
 	def sensor_names(self):
 		"""Internal use only: not a public interface"""
 		return list(SENSORS.keys())
-
-	def get_tests_MIL(self):
-		statusText=["Unsupported","Supported - Completed","Unsupported","Supported - Incompleted"]
-		statusRes = self.sensor(1)[1] #GET values
-		statusTrans = [] #translate values to text
-		statusTrans.append(str(statusRes[0])) #DTCs
-		if statusRes[1]==0: #MIL
-			statusTrans.append("Off")
-		else:
-			statusTrans.append("On")
-		for i in range(2,len(statusRes)): #Tests
-			statusTrans.append(statusText[statusRes[i]])
-		return statusTrans
-	#
-	# fixme: j1979 specifies that the program should poll until the number
-	# of returned DTCs matches the number indicated by a call to PID 01
-	#
-	def get_dtc(self):
-		"""Returns a list of all pending DTC codes. Each element consists of
-		a 2-tuple: (DTC code (string), Code description (string) )"""
-		dtcLetters = ["P", "C", "B", "U"]
-		r = self.sensor(1)[1] #data
-		dtcNumber = r[0]
-		mil = r[1]
-		DTCCodes = []
-		print("Number of stored DTC:"+ str(dtcNumber) + "MIL: "+ str(mil))
-		# get all DTC, 3 per mesg response
-		for i in range(0, ((dtcNumber+2)/3)):
-			self.send_command(GET_DTC_COMMAND)
-			res = self.get_result()
-			print("DTC result:"+ res)
-			for i in range(0, 3):
-				val1 = hex_to_int(res[3+i*6:5+i*6])
-				val2 = hex_to_int(res[6+i*6:8+i*6]) #get DTC codes from response (3 DTC each 2 bytes)
-				val = (val1<<8)+val2 #DTC val as int
-				if val==0: #skip fill of last packet
-					break
-				DTCStr=dtcLetters[(val&0xC000)>14]+str((val&0x3000)>>12)+str((val&0x0f00)>>8)+str((val&0x00f0)>>4)+str(val&0x000f)
-				DTCCodes.append(["Active",DTCStr])
-		#read mode 7
-		self.send_command(GET_FREEZE_DTC_COMMAND)
-		res = self.get_result()
-		if res[:7] == "NO DATA": #no freeze frame
-			return DTCCodes
-		print("DTC freeze result:"+ res)
-		for i in range(0, 3):
-			val1 = hex_to_int(res[3+i*6:5+i*6])
-			val2 = hex_to_int(res[6+i*6:8+i*6]) #get DTC codes from response (3 DTC each 2 bytes)
-			val = (val1<<8)+val2 #DTC val as int
-			if val==0: #skip fill of last packet
-				break
-			DTCStr=dtcLetters[(val&0xC000)>14]+str((val&0x3000)>>12)+str((val&0x0f00)>>8)+str((val&0x00f0)>>4)+str(val&0x000f)
-			DTCCodes.append(["Passive",DTCStr])
-		return DTCCodes
-
-	def clear_dtc(self):
-		"""Clears all DTCs and freeze frame data"""
-		self.send_command(CLEAR_DTC_COMMAND)
-		r = self.get_result()
-		return r
 
 def convert(code,function, offset):
 	if inspect.getargspec(function)[1] != None:
