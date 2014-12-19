@@ -70,36 +70,34 @@ def fuel_trim_percent(code):
 	code = hex_to_int(code)
 	return (code - 128.0) * 100.0 / 128
 
-def dtc_decrypt(code):
-	#first byte is byte after PID and without spaces
-	num = hex_to_int(code[:2]) #A byte
-	res = []
-
-	if num & 0x80: # is mil light on
-		mil = 1
-	else:
-		mil = 0
-		
-	# bit 0-6 are the number of dtc's. 
-	num = num & 0x7f
-	
-	res.append(num)
-	res.append(mil)
-	
-	numB = hex_to_int(code[2:4]) #B byte
-	  
+def decrypt_dtc_code(code):
+	"""Returns the 5-digit DTC code from hex encoding"""
+	dtc = []
+	current = code
 	for i in range(0,3):
-		res.append(((numB>>i)&0x01)+((numB>>(3+i))&0x02))
-	
-	numC = hex_to_int(code[4:6]) #C byte
-	numD = hex_to_int(code[6:8]) #D byte
-	   
-	for i in range(0,7):
-		res.append(((numC>>i)&0x01)+(((numD>>i)&0x01)<<1))
-	
-	res.append(((numD>>7)&0x01)) #EGR SystemC7  bit of different 
-	
-	return res
+		if len(current)<4:
+			raise "Tried to decode bad DTC: %s" % code
+
+		tc = obd_sensors.hex_to_int(current[0]) #typecode
+		tc = tc >> 2
+		if   tc == 0:
+			type = "P"
+		elif tc == 1:
+			type = "C"
+		elif tc == 2:
+			type = "B"
+		elif tc == 3:
+			type = "U"
+		else:
+			raise tc
+
+		dig1 = str(obd_sensors.hex_to_int(current[0]) & 3)
+		dig2 = str(obd_sensors.hex_to_int(current[1]))
+		dig3 = str(obd_sensors.hex_to_int(current[2]))
+		dig4 = str(obd_sensors.hex_to_int(current[3]))
+		dtc.append(type+dig1+dig2+dig3+dig4)
+		current = current[4:]
+	return dtc
 
 def hex_to_bitstring(str):
 	bitstring = ""
@@ -135,7 +133,7 @@ class Sensor:
 
 SENSORS = [
 	Sensor("pids"                  , "          Supported PIDs", "0100", hex_to_bitstring ,""       ),    
-	Sensor("dtc_status"            , "Status Since DTC Cleared", "0101", dtc_decrypt      ,""       ),    
+	Sensor("dtc_status"            , "Status Since DTC Cleared", "0101", decrypt_dtc_code      ,""       ),
 	Sensor("dtc_ff"                , "DTC Causing Freeze Frame", "0102", cpass            ,""       ),    
 	Sensor("fuel_status"           , "      Fuel System Status", "0103", cpass            ,""       ),
 	Sensor("load"                  , "   Calculated Load Value", "01041", percent_scale    ,""       ),    
