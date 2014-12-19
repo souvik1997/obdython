@@ -25,6 +25,7 @@
 import serial
 import string
 import time
+import platform
 from math import ceil
 
 GET_DTC_COMMAND   = "03"
@@ -159,14 +160,14 @@ class OBDPort:
 	def sensor(self , sensor_index):
 		"""Returns 3-tuple of given sensors. 3-tuple consists of
 		(Sensor Name (string), Sensor Value (string), Sensor Unit (string) ) """
-		sensor = obd_sensors.SENSORS[sensor_index]
+		sensor = SENSORS[sensor_index]
 		r = self.get_sensor_value(sensor)
 		return (sensor.name,r, sensor.unit)
 
 	def sensor_names(self):
 		"""Internal use only: not a public interface"""
 		names = []
-		for s in obd_sensors.SENSORS:
+		for s in SENSORS:
 			names.append(s.name)
 		return names
 
@@ -242,7 +243,7 @@ class OBD_Recorder():
 		portnames = scanSerial()
 		print(portnames)
 		for port in portnames:
-			self.port = obd_io.OBDPort(port, None, 2, 2)
+			self.port = OBDPort(port, None, 2, 2)
 			if(self.port.State == 0):
 				self.port.close()
 				self.port = None
@@ -255,7 +256,7 @@ class OBD_Recorder():
 		return self.port
 
 	def addsensor(self, item):
-		for index, e in enumerate(obd_sensors.SENSORS):
+		for index, e in enumerate(SENSORS):
 			if(item == e.shortname):
 				self.sensorlist.append(index)
 				break
@@ -267,7 +268,7 @@ class OBD_Recorder():
 			results = {}
 			for index in self.sensorlist:
 				(name, value, unit) = self.port.sensor(index)
-				results[obd_sensors.SENSORS[index].shortname] = value;
+				results[SENSORS[index].shortname] = value;
 			callback(results)
 
 def hex_to_int(str):
@@ -326,7 +327,7 @@ def decrypt_dtc_code(code):
 		if len(current)<4:
 			raise "Tried to decode bad DTC: %s" % code
 
-		tc = obd_sensors.hex_to_int(current[0]) #typecode
+		tc = hex_to_int(current[0]) #typecode
 		tc = tc >> 2
 		if   tc == 0:
 			type = "P"
@@ -339,10 +340,10 @@ def decrypt_dtc_code(code):
 		else:
 			raise tc
 
-		dig1 = str(obd_sensors.hex_to_int(current[0]) & 3)
-		dig2 = str(obd_sensors.hex_to_int(current[1]))
-		dig3 = str(obd_sensors.hex_to_int(current[2]))
-		dig4 = str(obd_sensors.hex_to_int(current[3]))
+		dig1 = str(hex_to_int(current[0]) & 3)
+		dig2 = str(hex_to_int(current[1]))
+		dig3 = str(hex_to_int(current[2]))
+		dig4 = str(hex_to_int(current[3]))
 		dtc.append(type+dig1+dig2+dig3+dig4)
 		current = current[4:]
 	return dtc
@@ -465,29 +466,6 @@ SENSORS = [
 	Sensor("engine_time"           , " Time Since Engine Start", "011F", sec_to_min       ,"min"    ),
 	Sensor("engine_mil_time"       , "  Engine Run with MIL on", "014D", sec_to_min       ,"min"    ),
 	]
- #!/usr/bin/env python
-###########################################################################
-# obd_sensors.py
-#
-# Copyright 2004 Donour Sizemore (donour@uchicago.edu)
-# Copyright 2009 Secons Ltd. (www.obdtester.com)
-#
-# This file is part of pyOBD.
-#
-# pyOBD is free software; you can redistribute it and/or modify
-# it under the terms of the GNU General Public License as published by
-# the Free Software Foundation; either version 2 of the License, or
-# (at your option) any later version.
-#
-# pyOBD is distributed in the hope that it will be useful,
-# but WITHOUT ANY WARRANTY; without even the implied warranty of
-# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-# GNU General Public License for more details.
-#
-# You should have received a copy of the GNU General Public License
-# along with pyOBD; if not, write to the Free Software
-# Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
-###########################################################################
 pcodes = {
 	"P0001": "Fuel Volume Regulator Control Circuit/Open",
 	"P0002": "Fuel Volume Regulator Control Circuit Range/Performance",
