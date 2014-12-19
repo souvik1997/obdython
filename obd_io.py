@@ -91,7 +91,7 @@ class OBDPort:
              parity = par, stopbits = sb, bytesize = databits,timeout = to)
              
          except serial.SerialException as e:
-             print e
+             print(e)
              self.State = 0
              return None
              
@@ -152,7 +152,7 @@ class OBDPort:
          # 9 seems to be the length of the shortest valid response
          if len(code) < 7:
              #raise Exception("BogusCode")
-             print "boguscode?"+code
+             print("boguscode?"+code)
          
          # get the first thing returned, echo should be off
          code = string.split(code, "\r")
@@ -181,7 +181,7 @@ class OBDPort:
                  if len(c) == 0:
                     if(repeat_count == 5):
                         break
-                    print "Got nothing\n"
+                    print("Got nothing\n")
                     repeat_count = repeat_count + 1
                     continue
                     
@@ -265,12 +265,12 @@ class OBDPort:
           DTCCodes = []
           
           
-          print "Number of stored DTC:" + str(dtcNumber) + " MIL: " + str(mil)
+          print("Number of stored DTC:" + str(dtcNumber) + " MIL: " + str(mil))
           # get all DTC, 3 per mesg response
           for i in range(0, ((dtcNumber+2)/3)):
             self.send_command(GET_DTC_COMMAND)
             res = self.get_result()
-            print "DTC result:" + res
+            print("DTC result:" + res)
             for i in range(0, 3):
                 val1 = hex_to_int(res[3+i*6:5+i*6])
                 val2 = hex_to_int(res[6+i*6:8+i*6]) #get DTC codes from response (3 DTC each 2 bytes)
@@ -290,7 +290,7 @@ class OBDPort:
           if res[:7] == "NO DATA": #no freeze frame
             return DTCCodes
           
-          print "DTC freeze result:" + res
+          print("DTC freeze result:" + res)
           for i in range(0, 3):
               val1 = hex_to_int(res[3+i*6:5+i*6])
               val2 = hex_to_int(res[6+i*6:8+i*6]) #get DTC codes from response (3 DTC each 2 bytes)

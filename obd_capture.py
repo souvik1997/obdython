@@ -16,7 +16,7 @@ class OBD_Capture():
 
     def connect(self):
         portnames = scanSerial()
-        print portnames
+        print(portnames)
         for port in portnames:
             self.port = obd_io.OBDPort(port, None, 2, 2)
             if(self.port.State == 0):
@@ -26,7 +26,7 @@ class OBD_Capture():
                 break
 
         if(self.port):
-            print "Connected to "+self.port.port.name
+            print("Connected to "+self.port.port.name)
             
     def is_connected(self):
         return self.port
@@ -49,7 +49,7 @@ class OBD_Capture():
                 self.unsupportedSensorList.append([i+1, obd_sensors.SENSORS[i+1]])
         
         for supportedSensor in self.supportedSensorList:
-            print "supported sensor index = " + str(supportedSensor[0]) + " " + str(supportedSensor[1].shortname)        
+            print("supported sensor index = " + str(supportedSensor[0]) + " " + str(supportedSensor[1].shortname))
         
         time.sleep(3)
         
@@ -68,7 +68,7 @@ class OBD_Capture():
                     (name, value, unit) = self.port.sensor(sensorIndex)
                     log_string += name + " = " + str(value) + " " + str(unit) + "\n"
 
-                print log_string,
+                print(log_string, end=' ')
                 time.sleep(0.5)
 
         except KeyboardInterrupt:
@@ -81,6 +81,6 @@ if __name__ == "__main__":
     o.connect()
     time.sleep(3)
     if not o.is_connected():
-        print "Not connected"
+        print("Not connected")
     else:
         o.capture_data()
