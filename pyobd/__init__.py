@@ -27,6 +27,8 @@ import string
 import time
 import platform
 import inspect
+import socket
+import bluetooth
 from math import ceil
 
 class OBDPort:
@@ -37,7 +39,7 @@ class OBDPort:
 		self.device = device
 		self.timeout = self.device.timeout
 		print("Opening interface (serial port)")
-		if not (self.restart() and self.echo_off()):
+		if not (self.restart() and self.echo_off() and self.header_on() and self.linefeed_on() and self.ready()):
 			return None
 
 	def close(self):
@@ -56,6 +58,18 @@ class OBDPort:
 
 	def echo_off(self):
 		return self.device.send("ate0")
+
+	def header_on(self):
+		return self.device.send("ath1")
+
+	def header_off(self):
+		return self.device.send("ath0")
+
+	def linefeed_off(self):
+		return self.device.send("atl0")
+
+	def linefeed_on(self):
+		return self.device.send("atl1")
 
 	def interpret_result(self,code):
 		"""Internal use only: not a public interface"""
@@ -87,11 +101,12 @@ class OBDPort:
 				if c == '\r':
 					continue
 				if c == ">":
-					break;
+					break
 				if buffer != ""or c != ">": #if something is in buffer, add everything
 					buffer = buffer + c
 				if time.clock()-starttime > self.timeout:
-					break;
+					self.device.State = 0
+					break
 				print(buffer)
 			if(buffer == ""):
 				return None
@@ -99,6 +114,19 @@ class OBDPort:
 		else:
 			print("NO self.port!")
 		return None
+
+
+	def ready(self):
+		if self.device.State is not 0:
+			startime = time.time()
+			while 1:
+				c = self.device.read(1)
+				if c == ">":
+					break
+				if time.clock()-starttime > self.timeout:
+					self.device.State = 0
+					break
+		return self.device.State == 1
 
 	# get sensor value from command
 	def get_sensor_value(self,sensor):
@@ -129,25 +157,38 @@ class OBDPort:
 class Device:
 	types={"bluetooth":0,"serial":1}
 	def __init__(self, type, serial_device="", baud=38400, databits=8, par=serial.PARITY_NONE, stopbits=1, timeout=60, bluetooth_mac="", bluetooth_port=""):
-		self.State = 1 #state SERIAL is 1 connected, 0 disconnected (connection failed)
+		self.State = 0 #state SERIAL is 1 connected, 0 disconnected (connection failed)
 		self.port = None
 		self.type = type
 		self.timeout = timeout
+		self.bluetooth_mac = bluetooth_mac
+		self.bluetooth_port = bluetooth_port
+		self.baud = baud
+		self.parity = par
+		self.stopbits = stopbits
+		self.serial_device = serial_device
+		return self.connect()
+
+	def connect(self):
+		if self.State is 1:
+			return True
 		if type == self.types['serial']:
 			try:
-				self.port = serial.Serial(serial_device,baud, parity = par, stopbits = stopbits, bytesize = databits,timeout = timeout)
+				self.port = serial.Serial(self.serial_device, self.baud, parity = self.parity, stopbits = self.stopbits, timeout = self.timeout)
 				self.State = 1
 			except serial.SerialException:
 				self.State = 0
-				return None
+				return False
 		elif type == self.types['bluetooth']:
 			try:
-				self.port = socket.socket(socket.AF_BLUETOOTH, socket.SOCK_STREAM, socket.BTPROTO_RFCOMM)
-				self.port.connect(bluetooth_mac,bluetooth_port)
+				self.port = bluetooth.BluetoothSocket(bluetooth.RFCOMM)
+				self.port.connect((self.bluetooth_mac, self.bluetooth_port))
+				self.port.settimeout(self.timeout)
 				self.State = 1
 			except socket.error:
 				self.State = 0
-				return None
+				return False
+		return True
 
 	def send(self, cmd):
 		"""Internal use only: not a public interface"""
@@ -164,9 +205,7 @@ class Device:
 					return False
 			elif self.type == self.types['bluetooth']:
 				try:
-					for c in cmd:
-						self.port.send(cmd.encode())
-					self.port.send("\r\n".encode())
+					self.port.send((cmd+"\r\n").encode())
 				except socket.error:
 					self.State = 0
 					return False
@@ -186,6 +225,7 @@ class Device:
 				except socket.error:
 					self.State = 0
 					return False
+
 	def close(self):
 		if self.port:
 			self.State = 0

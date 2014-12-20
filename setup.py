@@ -10,5 +10,5 @@ setup(
 	keywords = "OBD-II library",
 	url = "https://souvik.me/cgit/pyobd",
 	packages=['pyobd'],
-	install_requires=['pyserial'],
+	install_requires=['pyserial', 'pybluez'],
 )
