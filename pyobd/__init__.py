@@ -31,48 +31,31 @@ from math import ceil
 
 class OBDPort:
 	"""OBDPort abstracts all communication with OBD-II device."""
-	def __init__(self,portnum, baud=38400, databits=8, par=serial.PARITY_NONE, stopbits=1, timeout=60):
+	def __init__(self, device):
 		"""Initializes port by resetting device and gettings supported PIDs. """
-		self.ELMver = "Unknown"
-		self.State = 1 #state SERIAL is 1 connected, 0 disconnected (connection failed)
-		self.port = None
-		self.timeout = timeout
+		self.ELMver = "Unknown"		
+		self.device = device
+		self.timeout = self.device.timeout
 		print("Opening interface (serial port)")
-		try:
-			self.port = serial.Serial(portnum,baud, parity = par, stopbits = stopbits, bytesize = databits,timeout = timeout)
-			self.send_command("atz") # initialize
-			time.sleep(1)
-			self.ELMver = self.get_result()
-			if(self.ELMver is None):
-				return None
-			self.send_command("ate0")
-			self.get_result() #flush
-			self.send_command("0100")
-			ready = self.get_result()
-			if(ready is None):
-				self.State = 0
-				return None
-		except serial.SerialException:
-			self.State = 0
+		if not (self.restart() and self.echo_off())
 			return None
-		return None
 
 	def close(self):
 		"""Resets device and closes all associated filehandles"""
-		if (self.port!= None) and self.State==1:
-			self.send_command("atz")
-			self.port.close()
-		self.port = None
+		self.restart()
+		self.device.close()
 		self.ELMver = "Unknown"
 
-	def send_command(self, cmd):
-		"""Internal use only: not a public interface"""
-		if self.port:
-			self.port.flushOutput()
-			self.port.flushInput()
-			for c in cmd:
-				self.port.write(c.encode())
-			self.port.write("\r\n".encode())
+	def restart(self):
+		val = self.device.send("atz")
+		time.sleep(1)
+		return val
+
+	def echo_on(self):
+		return self.device.send("ate1")
+
+	def echo_off(self):
+		return self.device.send("ate0")
 
 	def interpret_result(self,code):
 		"""Internal use only: not a public interface"""	
@@ -94,7 +77,7 @@ class OBDPort:
 			buffer = ""
 			starttime = time.time()
 			while 1:
-				c = self.port.read(1).decode('utf-8')
+				c = device.read(1).decode('utf-8')
 				if len(c) == 0:
 					if(repeat_count == 5):
 						break
@@ -121,7 +104,7 @@ class OBDPort:
 	def get_sensor_value(self,sensor):
 		"""Internal use only: not a public interface"""
 		cmd = sensor.cmd
-		self.send_command(cmd)
+		self.device.send(cmd)
 		data = self.get_result()
 		if data:
 			data = self.interpret_result(data)
@@ -132,7 +115,7 @@ class OBDPort:
 		return data
 
 	# return string of sensor name and value from sensor index
-	def sensor(self , sensor_shortname):
+	def sensor(self, sensor_shortname):
 		"""Returns 3-tuple of given sensors. 3-tuple consists of
 		(Sensor Name (string), Sensor Value (string), Sensor Unit (string) ) """
 		sensor = SENSORS[sensor_shortname]
@@ -142,6 +125,80 @@ class OBDPort:
 	def sensor_names(self):
 		"""Internal use only: not a public interface"""
 		return list(SENSORS.keys())
+
+class Device:
+	types={"bluetooth",0,"serial",1}                
+	def __init__(type, serial_device="", baud=38400, databits=8, par=serial.PARITY_NONE, stopbits=1, timeout=60, bluetooth_mac="", bluetooth_port=""):
+		self.State = 1 #state SERIAL is 1 connected, 0 disconnected (connection failed)
+		self.port = None
+		self.type = type
+		if type == types['serial']:
+			try:
+				self.port = serial.Serial(serial_device,baud, parity = par, stopbits = stopbits, bytesize = databits,timeout = timeout)
+				self.State = 1
+			except serial.SerialException:
+				self.State = 0
+				return None
+		elif type == types['bluetooth']:
+			try:
+				self.port = socket.socket(socket.AF_BLUETOOTH, socket.SOCK_STREAM, socket.BTPROTO_RFCOMM)
+				s.connect(bluetooth_mac,bluetooth_port)
+				self.State = 1
+			except socket.error:
+				self.State = 0
+				return None
+
+	def send(self, cmd):
+		"""Internal use only: not a public interface"""
+		if self.port:
+			if self.type == types['serial']
+				try: 
+					self.port.flushOutput()
+					self.port.flushInput()
+					for c in cmd:
+						self.port.write(c.encode())
+					self.port.write("\r\n".encode())
+				except serial.SerialException:
+					self.State = 0
+					return False
+			elif self.type == types['bluetooth']
+				try:
+					for c in cmd:
+						self.port.send(cmd.encode())
+					self.port.send("\r\n".encode())
+				except socket.error:
+					self.State = 0
+					return False
+		return True
+
+	def read(self,length):
+		if self.port:
+			if self.type == types['serial']:
+				try:
+					return self.port.read(length)
+				except serial.SerialException:
+					self.State = 0
+					return False
+			if self.type == types['bluetooth']:
+				try:
+					return self.port.recv(length)
+				except socket.error:
+					self.State = 0
+					return False
+	def close(self):
+		if self.port:
+			self.State = 0
+			if self.type == types['serial']:
+				try:
+					self.port.close()
+				except serial.SerialException:
+					return False
+			if self.type == types['bluetooth']:
+				try:
+					return self.port.close()
+				except socket.error:
+					return False
+			return True
 
 def convert(code,function, offset):
 	if inspect.getargspec(function)[1] != None:
