@@ -96,11 +96,13 @@ class OBDPort:
 	def interpret_result(self,code):
 		"""Internal use only: not a public interface"""
 		# get the first thing returned, echo should be off
-		code = "".join(code.split())
+		code = "".join(code.split()).upper()
 		#cables can behave differently
 		print(code)
-		if code == "NODATA": # there is no such sensor
+		if "NODATA" in code: # there is no such sensor
 			return "NODATA"
+		elif "UNABLETOCONNECT" in code:
+			return "UNABLETOCONNECT"
 		# first 4 characters are code from ELM
 		code = bytearray.fromhex(code)
 		return code
@@ -147,7 +149,7 @@ class OBDPort:
 		data = self.get_result()
 		if data:
 			data = self.interpret_result(data)
-			if data != "NODATA":
+			if data != "NODATA" and data != "UNABLETOCONNECT":
 				data = convert(data,sensor.value,5)
 		else:
 			return "NORESPONSE"
@@ -157,6 +159,7 @@ class OBDPort:
 	def sensor(self, sensor_shortname):
 		"""Returns 3-tuple of given sensors. 3-tuple consists of
 		(Sensor Name (string), Sensor Value (string), Sensor Unit (string) ) """
+		self.ready()
 		sensor = SENSORS[sensor_shortname]
 		r = self.get_sensor_value(sensor)
 		return (sensor.name,r, sensor.unit)
@@ -186,7 +189,7 @@ class Device:
 			return True
 		if self.type == self.types['serial']:
 			try:
-				self.port = serial.Serial(self.serial_device, self.baud, parity = self.parity, stopbits = self.stopbits, timeout = self.timeout)
+				self.port = serial.Serial(self.serial_device, self.baud, parity = self.parity, stopbits = self.stopbits, writeTimeout = 0, timeout = 0)
 				self.State = 1
 			except serial.SerialException:
 				return False
@@ -223,7 +226,11 @@ class Device:
 		if self.port:
 			if self.type == self.types['serial']:
 				try:
-					return self.port.read(length)
+					val = self.port.read(length)
+					if val is b'':
+						return False
+					else:
+						return val
 				except serial.SerialException:
 					return False
 			if self.type == self.types['bluetooth']:
