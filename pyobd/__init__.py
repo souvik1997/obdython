@@ -30,81 +30,99 @@ import inspect
 import socket
 import bluetooth
 from math import ceil
+import logging
 
 class OBDPort:
 	"""OBDPort abstracts all communication with OBD-II device."""
 	def __init__(self, device):
 		"""Initializes port by resetting device and gettings supported PIDs. """
-		self.ELMver = "Unknown"
+		self.logger = logging.getLogger(__name__)
 		self.device = device
 		self.timeout = self.device.timeout
-		print("Opening interface")
-		self.ready()
-		self.echo_off()
-		self.header_on()
-		self.linefeed_on()
+		self.logger.info("Opening interface")
+
+	def connect(self):
+		if self.ready() is Device.ERROR or self.echo_off() is Device.ERROR or self.header_on() is Device.ERROR or self.linefeed_on() is Device.ERROR:
+			self.logger.error("Interface disconnected")
+			return Device.ERROR
+		else:
+			return Device.SUCCESS
 
 	def close(self):
 		"""Resets device and closes all associated filehandles"""
 		self.restart()
-		self.device.close()
-		self.ELMver = "Unknown"
+		return self.device.close()
 
 	def restart(self):
 		val = self.device.send("atz")
 		time.sleep(1)
-		self.ready()
-		self.echo_off()
-		self.header_on()
-		self.linefeed_on()
-		return val
+		return self.connect()
 
 	def echo_on(self):
 		val = self.device.send("ate1")
-		self.get_result()
-		return val
+		c = self.get_result()
+		if val is Device.ERROR or c is Device.ERROR:
+			return Device.ERROR
+		return Device.SUCCESS
 
 	def echo_off(self):
 		val = self.device.send("ate0")
-		self.get_result()
-		return val
+		c = self.get_result()
+		if val is Device.ERROR or c is Device.ERROR:
+			return Device.ERROR
+		return Device.SUCCESS
 
 	def header_on(self):
-		val =self.device.send("ath1")
-		self.get_result()
-		return val
+		val = self.device.send("ath1")
+		c = self.get_result()
+		if val is Device.ERROR or c is Device.ERROR:
+			return Device.ERROR
+		return Device.SUCCESS
 
 	def header_off(self):
 		val = self.device.send("ath0")
-		self.get_result()
-		return val
+		c = self.get_result()
+		if val is Device.ERROR or c is Device.ERROR:
+			return Device.ERROR
+		return Device.SUCCESS
 
 	def linefeed_off(self):
 		val = self.device.send("atl0")
-		self.get_result()
-		return val
+		c = self.get_result()
+		if val is Device.ERROR or c is Device.ERROR:
+			return Device.ERROR
+		return Device.SUCCESS
 
 	def linefeed_on(self):
 		val = self.device.send("atl1")
-		self.get_result()
-		return val
+		c = self.get_result()
+		if val is Device.ERROR or c is Device.ERROR:
+			return Device.ERROR
+		return Device.SUCCESS
 
 	def get_elm_version(self):
-		self.device.send("ati")
-		return self.get_result()
+		val = self.device.send("ati")
+		c = self.get_result()
+		if c is not Device.ERROR and val is not Device.ERROR:
+			return val.strip()
+		else:
+			return Device.ERROR
 
 	def interpret_result(self,code):
 		"""Internal use only: not a public interface"""
 		# get the first thing returned, echo should be off
 		code = "".join(code.split()).upper()
 		#cables can behave differently
-		print(code)
+		self.logger.debug(code)
 		if "NODATA" in code: # there is no such sensor
 			return "NODATA"
 		elif "UNABLETOCONNECT" in code:
 			return "UNABLETOCONNECT"
 		# first 4 characters are code from ELM
-		code = bytearray.fromhex(code)
+		try:
+			code = bytearray.fromhex(code)
+		except ValueError:
+			return "BADDATA"
 		return code
 
 	def get_result(self, block=True):
@@ -114,32 +132,39 @@ class OBDPort:
 			starttime = time.time()
 			while 1:
 				c = self.device.read(1)
-				if c is not False:
+				if c is not False and c is not Device.ERROR:
 					c = c.decode('utf-8')
-				else:
+				elif c is False:
 					if block:
 						continue
 					else:
 						break
+				else:
+					self.logger.error("Interface disconnected")
+					return Device.ERROR
 				if c == ">":
 					break
 				if buffer != "" or c != ">": #if something is in buffer, add everything
 					buffer = buffer + c
-				if time.clock()-starttime > self.timeout:
-					return False
+				if time.time()-starttime > self.timeout:
+					return Device.ERROR
 					break
-				print(buffer)
+				self.logger.debug(buffer)
 			return buffer
 		else:
-			print("NO self.port!")
-		return None
-
+			self.logger.warning("NO self.port!")
+		return Device.ERROR
 
 	def ready(self):
 		c = self.device.read(1)
+		starttime = time.time()
 		while c is not False:
 			c = self.device.read(1)
-		return True
+			if time.time()-starttime > self.timeout:
+				return Device.ERROR
+		if c is Device.ERROR:
+			return Device.ERROR
+		return Device.SUCCESS
 
 	# get sensor value from command
 	def get_sensor_value(self,sensor):
@@ -147,9 +172,9 @@ class OBDPort:
 		cmd = sensor.cmd
 		self.device.send(cmd)
 		data = self.get_result()
-		if data:
+		if data is not Device.ERROR and data is not False:
 			data = self.interpret_result(data)
-			if data != "NODATA" and data != "UNABLETOCONNECT":
+			if data != "NODATA" and data != "UNABLETOCONNECT" and data != "BADDATA":
 				data = convert(data,sensor.value,5)
 		else:
 			return "NORESPONSE"
@@ -159,10 +184,16 @@ class OBDPort:
 	def sensor(self, sensor_shortname):
 		"""Returns 3-tuple of given sensors. 3-tuple consists of
 		(Sensor Name (string), Sensor Value (string), Sensor Unit (string) ) """
-		self.ready()
-		sensor = SENSORS[sensor_shortname]
-		r = self.get_sensor_value(sensor)
-		return (sensor.name,r, sensor.unit)
+		if self.ready() is not Device.ERROR:
+			sensor = SENSORS[sensor_shortname]
+			r = self.get_sensor_value(sensor)
+			if r is "NORESPONSE":
+				return Device.ERROR
+			else:
+				return (sensor.name,r, sensor.unit)
+		else:
+			self.logger.error("Interface disconnected")
+			return Device.ERROR
 
 	def sensor_names(self):
 		"""Internal use only: not a public interface"""
@@ -170,6 +201,8 @@ class OBDPort:
 
 class Device:
 	types={"bluetooth":0,"serial":1}
+	ERROR=-1
+	SUCCESS=0
 	def __init__(self, type, serial_device="", baud=38400, databits=8, par=serial.PARITY_NONE, stopbits=1, timeout=60, bluetooth_mac="", bluetooth_port=""):
 		self.State = 0 #state SERIAL is 1 connected, 0 disconnected (connection failed)
 		self.port = None
@@ -186,13 +219,13 @@ class Device:
 
 	def connect(self):
 		if self.State is 1:
-			return True
+			return self.SUCCESS
 		if self.type == self.types['serial']:
 			try:
 				self.port = serial.Serial(self.serial_device, self.baud, parity = self.parity, stopbits = self.stopbits, writeTimeout = 0, timeout = 0)
 				self.State = 1
-			except serial.SerialException:
-				return False
+			except Exception:
+				return self.ERROR
 		elif self.type == self.types['bluetooth']:
 			try:
 				self.port = bluetooth.BluetoothSocket(bluetooth.RFCOMM)
@@ -200,8 +233,8 @@ class Device:
 				self.port.setblocking(False)
 				self.State = 1
 			except socket.error:
-				return False
-		return True
+				return self.ERROR
+		return self.SUCCESS
 
 	def send(self, cmd):
 		"""Internal use only: not a public interface"""
@@ -213,14 +246,14 @@ class Device:
 					for c in cmd:
 						self.port.write(c.encode())
 					self.port.write("\r\n".encode())
-				except serial.SerialException:
-					return False
+				except Exception:
+					return self.ERROR
 			elif self.type == self.types['bluetooth']:
 				try:
 					self.port.send((cmd+"\r\n").encode())
 				except socket.error:
-					return False
-		return True
+					return self.ERROR
+		return self.SUCCESS
 
 	def read(self,length):
 		if self.port:
@@ -231,13 +264,13 @@ class Device:
 						return False
 					else:
 						return val
-				except serial.SerialException:
-					return False
+				except Exception:
+					return self.ERROR
 			if self.type == self.types['bluetooth']:
 				try:
 					return self.port.recv(length)
 				except socket.error:
-					return False
+					return self.ERROR
 
 	def close(self):
 		if self.port:
@@ -245,14 +278,14 @@ class Device:
 			if self.type == self.types['serial']:
 				try:
 					self.port.close()
-				except serial.SerialException:
-					return False
+				except Exception:
+					return self.ERROR
 			if self.type == self.types['bluetooth']:
 				try:
 					return self.port.close()
 				except socket.error:
-					return False
-			return True
+					return self.ERROR
+			return self.SUCCESS
 
 def convert(code,function, offset):
 	if inspect.getargspec(function)[1] != None:
