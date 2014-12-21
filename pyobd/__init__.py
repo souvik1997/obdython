@@ -203,13 +203,13 @@ class Device:
 	types={"bluetooth":0,"serial":1}
 	ERROR=-1
 	SUCCESS=0
-	def __init__(self, type, serial_device="", baud=38400, databits=8, par=serial.PARITY_NONE, stopbits=1, timeout=60, bluetooth_mac="", bluetooth_port=""):
+	def __init__(self, type, serial_device="", baud=38400, databits=8, par=serial.PARITY_NONE, stopbits=1, timeout=60, bluetooth_mac="", bluetooth_channel=""):
 		self.State = 0 #state SERIAL is 1 connected, 0 disconnected (connection failed)
 		self.port = None
 		self.type = type
 		self.timeout = timeout
 		self.bluetooth_mac = bluetooth_mac
-		self.bluetooth_port = bluetooth_port
+		self.bluetooth_channel = bluetooth_channel
 		self.baud = baud
 		self.parity = par
 		self.stopbits = stopbits
@@ -229,7 +229,7 @@ class Device:
 		elif self.type == self.types['bluetooth']:
 			try:
 				self.port = bluetooth.BluetoothSocket(bluetooth.RFCOMM)
-				self.port.connect((self.bluetooth_mac, self.bluetooth_port))
+				self.port.connect((self.bluetooth_mac, self.bluetooth_channel))
 				self.port.setblocking(False)
 				self.State = 1
 			except socket.error:
