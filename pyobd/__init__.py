@@ -42,7 +42,7 @@ class OBDPort:
 		self.logger.info("Opening interface")
 
 	def connect(self):
-		if self.ready() is Device.ERROR or self.echo_off() is Device.ERROR or self.header_on() is Device.ERROR or self.linefeed_on() is Device.ERROR:
+		if self.ready() == Device.ERROR or self.echo_off() == Device.ERROR or self.header_on() == Device.ERROR or self.linefeed_on() == Device.ERROR:
 			self.logger.error("Interface disconnected")
 			return Device.ERROR
 		else:
@@ -61,49 +61,49 @@ class OBDPort:
 	def echo_on(self):
 		val = self.device.send("ate1")
 		c = self.get_result()
-		if val is Device.ERROR or c is Device.ERROR:
+		if val == Device.ERROR or c == Device.ERROR:
 			return Device.ERROR
 		return Device.SUCCESS
 
 	def echo_off(self):
 		val = self.device.send("ate0")
 		c = self.get_result()
-		if val is Device.ERROR or c is Device.ERROR:
+		if val == Device.ERROR or c == Device.ERROR:
 			return Device.ERROR
 		return Device.SUCCESS
 
 	def header_on(self):
 		val = self.device.send("ath1")
 		c = self.get_result()
-		if val is Device.ERROR or c is Device.ERROR:
+		if val == Device.ERROR or c == Device.ERROR:
 			return Device.ERROR
 		return Device.SUCCESS
 
 	def header_off(self):
 		val = self.device.send("ath0")
 		c = self.get_result()
-		if val is Device.ERROR or c is Device.ERROR:
+		if val == Device.ERROR or c == Device.ERROR:
 			return Device.ERROR
 		return Device.SUCCESS
 
 	def linefeed_off(self):
 		val = self.device.send("atl0")
 		c = self.get_result()
-		if val is Device.ERROR or c is Device.ERROR:
+		if val == Device.ERROR or c == Device.ERROR:
 			return Device.ERROR
 		return Device.SUCCESS
 
 	def linefeed_on(self):
 		val = self.device.send("atl1")
 		c = self.get_result()
-		if val is Device.ERROR or c is Device.ERROR:
+		if val == Device.ERROR or c == Device.ERROR:
 			return Device.ERROR
 		return Device.SUCCESS
 
 	def get_elm_version(self):
 		val = self.device.send("ati")
 		c = self.get_result()
-		if c is not Device.ERROR and val is not Device.ERROR:
+		if c != Device.ERROR and val != Device.ERROR:
 			return val.strip()
 		else:
 			return Device.ERROR
@@ -127,14 +127,14 @@ class OBDPort:
 
 	def get_result(self, block=True):
 		"""Internal use only: not a public interface"""
-		if self.device.State is not 0:
+		if self.device.State != 0:
 			buffer = ""
 			starttime = time.time()
 			while 1:
 				c = self.device.read(1)
-				if c is not False and c is not Device.ERROR:
+				if c != False and c != Device.ERROR:
 					c = c.decode('utf-8')
-				elif c is False:
+				elif c == False:
 					if block:
 						continue
 					else:
@@ -158,11 +158,11 @@ class OBDPort:
 	def ready(self):
 		c = self.device.read(1)
 		starttime = time.time()
-		while c is not False:
+		while c != False:
 			c = self.device.read(1)
 			if time.time()-starttime > self.timeout:
 				return Device.ERROR
-		if c is Device.ERROR:
+		if c == Device.ERROR:
 			return Device.ERROR
 		return Device.SUCCESS
 
@@ -172,7 +172,7 @@ class OBDPort:
 		cmd = sensor.cmd
 		self.device.send(cmd)
 		data = self.get_result()
-		if data is not Device.ERROR and data is not False:
+		if data != Device.ERROR and data != False:
 			data = self.interpret_result(data)
 			if data != "NODATA" and data != "UNABLETOCONNECT" and data != "BADDATA":
 				data = convert(data,sensor.value,5)
@@ -184,10 +184,10 @@ class OBDPort:
 	def sensor(self, sensor_shortname):
 		"""Returns 3-tuple of given sensors. 3-tuple consists of
 		(Sensor Name (string), Sensor Value (string), Sensor Unit (string) ) """
-		if self.ready() is not Device.ERROR:
+		if self.ready() != Device.ERROR:
 			sensor = SENSORS[sensor_shortname]
 			r = self.get_sensor_value(sensor)
-			if r is "NORESPONSE":
+			if r == "NORESPONSE":
 				return Device.ERROR
 			else:
 				return (sensor.name,r, sensor.unit)
@@ -218,7 +218,7 @@ class Device:
 		return None
 
 	def connect(self):
-		if self.State is 1:
+		if self.State == 1:
 			return self.SUCCESS
 		if self.type == self.types['serial']:
 			try:
@@ -260,7 +260,7 @@ class Device:
 			if self.type == self.types['serial']:
 				try:
 					val = self.port.read(length)
-					if val is b'':
+					if val == b'':
 						return False
 					else:
 						return val
