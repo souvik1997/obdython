@@ -251,7 +251,7 @@ class Device:
 			elif self.type == self.types['bluetooth']:
 				try:
 					self.port.send((cmd+"\r\n").encode())
-				except bluetooth.btcommon.BluetoothException:
+				except bluetooth.btcommon.BluetoothError:
 					return self.ERROR
 		return self.SUCCESS
 
@@ -269,7 +269,7 @@ class Device:
 			if self.type == self.types['bluetooth']:
 				try:
 					return self.port.recv(length)
-				except bluetooth.btcommon.BluetoothException:
+				except bluetooth.btcommon.BluetoothError:
 					return False #a terrible hack
 
 	def close(self):
@@ -283,7 +283,7 @@ class Device:
 			if self.type == self.types['bluetooth']:
 				try:
 					return self.port.close()
-				except bluetooth.btcommon.BluetoothException:
+				except bluetooth.btcommon.BluetoothError:
 					return self.ERROR
 			return self.SUCCESS
 
