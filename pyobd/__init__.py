@@ -38,9 +38,11 @@ class OBDPort:
 		self.ELMver = "Unknown"
 		self.device = device
 		self.timeout = self.device.timeout
-		print("Opening interface (serial port)")
-		if not (self.restart() and self.echo_off() and self.header_on() and self.linefeed_on() and self.ready()):
-			return None
+		print("Opening interface")
+		self.ready()
+		self.echo_off()
+		self.header_on()
+		self.linefeed_on()
 
 	def close(self):
 		"""Resets device and closes all associated filehandles"""
@@ -51,25 +53,45 @@ class OBDPort:
 	def restart(self):
 		val = self.device.send("atz")
 		time.sleep(1)
+		self.ready()
+		self.echo_off()
+		self.header_on()
+		self.linefeed_on()
 		return val
 
 	def echo_on(self):
-		return self.device.send("ate1")
+		val = self.device.send("ate1")
+		self.get_result()
+		return val
 
 	def echo_off(self):
-		return self.device.send("ate0")
+		val = self.device.send("ate0")
+		self.get_result()
+		return val
 
 	def header_on(self):
-		return self.device.send("ath1")
+		val =self.device.send("ath1")
+		self.get_result()
+		return val
 
 	def header_off(self):
-		return self.device.send("ath0")
+		val = self.device.send("ath0")
+		self.get_result()
+		return val
 
 	def linefeed_off(self):
-		return self.device.send("atl0")
+		val = self.device.send("atl0")
+		self.get_result()
+		return val
 
 	def linefeed_on(self):
-		return self.device.send("atl1")
+		val = self.device.send("atl1")
+		self.get_result()
+		return val
+
+	def get_elm_version(self):
+		self.device.send("ati")
+		return self.get_result()
 
 	def interpret_result(self,code):
 		"""Internal use only: not a public interface"""
@@ -83,33 +105,28 @@ class OBDPort:
 		code = bytearray.fromhex(code)
 		return code
 
-	def get_result(self):
+	def get_result(self, block=True):
 		"""Internal use only: not a public interface"""
-		#time.sleep(0.01)
-		repeat_count = 0
 		if self.device.State is not 0:
 			buffer = ""
 			starttime = time.time()
 			while 1:
-				c = self.device.read(1).decode('utf-8')
-				if len(c) == 0:
-					if(repeat_count == 5):
+				c = self.device.read(1)
+				if c is not False:
+					c = c.decode('utf-8')
+				else:
+					if block:
+						continue
+					else:
 						break
-					print("Got nothing\n")
-					repeat_count = repeat_count + 1
-					continue
-				if c == '\r':
-					continue
 				if c == ">":
 					break
-				if buffer != ""or c != ">": #if something is in buffer, add everything
+				if buffer != "" or c != ">": #if something is in buffer, add everything
 					buffer = buffer + c
 				if time.clock()-starttime > self.timeout:
-					self.device.State = 0
+					return False
 					break
 				print(buffer)
-			if(buffer == ""):
-				return None
 			return buffer
 		else:
 			print("NO self.port!")
@@ -117,16 +134,10 @@ class OBDPort:
 
 
 	def ready(self):
-		if self.device.State is not 0:
-			startime = time.time()
-			while 1:
-				c = self.device.read(1)
-				if c == ">":
-					break
-				if time.clock()-starttime > self.timeout:
-					self.device.State = 0
-					break
-		return self.device.State == 1
+		c = self.device.read(1)
+		while c is not False:
+			c = self.device.read(1)
+		return True
 
 	# get sensor value from command
 	def get_sensor_value(self,sensor):
@@ -167,26 +178,25 @@ class Device:
 		self.parity = par
 		self.stopbits = stopbits
 		self.serial_device = serial_device
-		return self.connect()
+		self.connect()
+		return None
 
 	def connect(self):
 		if self.State is 1:
 			return True
-		if type == self.types['serial']:
+		if self.type == self.types['serial']:
 			try:
 				self.port = serial.Serial(self.serial_device, self.baud, parity = self.parity, stopbits = self.stopbits, timeout = self.timeout)
 				self.State = 1
 			except serial.SerialException:
-				self.State = 0
 				return False
-		elif type == self.types['bluetooth']:
+		elif self.type == self.types['bluetooth']:
 			try:
 				self.port = bluetooth.BluetoothSocket(bluetooth.RFCOMM)
 				self.port.connect((self.bluetooth_mac, self.bluetooth_port))
-				self.port.settimeout(self.timeout)
+				self.port.setblocking(False)
 				self.State = 1
 			except socket.error:
-				self.State = 0
 				return False
 		return True
 
@@ -201,13 +211,11 @@ class Device:
 						self.port.write(c.encode())
 					self.port.write("\r\n".encode())
 				except serial.SerialException:
-					self.State = 0
 					return False
 			elif self.type == self.types['bluetooth']:
 				try:
 					self.port.send((cmd+"\r\n").encode())
 				except socket.error:
-					self.State = 0
 					return False
 		return True
 
@@ -217,13 +225,11 @@ class Device:
 				try:
 					return self.port.read(length)
 				except serial.SerialException:
-					self.State = 0
 					return False
 			if self.type == self.types['bluetooth']:
 				try:
 					return self.port.recv(length)
 				except socket.error:
-					self.State = 0
 					return False
 
 	def close(self):
