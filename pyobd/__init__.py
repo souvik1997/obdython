@@ -104,7 +104,7 @@ class OBDPort:
 		val = self.device.send("ati")
 		c = self.get_result()
 		if c != Device.ERROR and val != Device.ERROR:
-			return val.strip()
+			return c.strip()
 		else:
 			return Device.ERROR
 
@@ -270,7 +270,7 @@ class Device:
 				try:
 					return self.port.recv(length)
 				except socket.error:
-					return self.ERROR
+					return False #a terrible hack
 
 	def close(self):
 		if self.port:
